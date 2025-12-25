@@ -23,7 +23,12 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://pulse-so.vercel.app"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "https://pulse-so.vercel.app",
+        "https://pulse-frontend-git-staging-huzaifa785s-projects.vercel.app",
+        "https://pulse-frontend-git-develop-huzaifa785s-projects.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
