@@ -1,46 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.auth.dependencies import get_current_patient
 from app.services.patient_service import patient_service
-from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
-from datetime import date
+from app.schemas.patient import (
+    PatientOnboardingData,
+    PatientProfileUpdate,
+    PatientProfileResponse,
+    OnboardingStatusResponse
+)
+from app.schemas.goal import GoalStatsResponse
+from typing import Dict, Optional
 
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
 
-class EmergencyContact(BaseModel):
-    name: str = Field(..., description="Emergency contact name")
-    phone: str = Field(..., description="Emergency contact phone")
-    relationship: str = Field(..., description="Relationship to patient")
-
-
-class HealthGoal(BaseModel):
-    goal: str = Field(..., description="Health goal description")
-    frequency: str = Field(..., description="Goal frequency: daily, weekly, monthly")
-
-
-class OnboardingData(BaseModel):
-    date_of_birth: date = Field(..., description="Patient's date of birth")
-    height_cm: float = Field(..., gt=0, description="Height in centimeters")
-    weight_kg: float = Field(..., gt=0, description="Weight in kilograms")
-    health_goals: List[HealthGoal] = Field(..., description="List of health goals with frequency")
-    health_restrictions: List[str] = Field(default=[], description="List of health restrictions")
-    reminder_frequency: str = Field(default="daily", description="Reminder frequency: daily, weekly, monthly, none")
-    emergency_contacts: List[EmergencyContact] = Field(default=[], max_length=3, description="Up to 3 emergency contacts")
-
-
-class ProfileUpdateData(BaseModel):
-    date_of_birth: Optional[date] = None
-    height_cm: Optional[float] = Field(None, gt=0)
-    weight_kg: Optional[float] = Field(None, gt=0)
-    health_goals: Optional[List[HealthGoal]] = None
-    health_restrictions: Optional[List[str]] = None
-    reminder_frequency: Optional[str] = Field(None, description="Reminder frequency: daily, weekly, monthly, none")
-    emergency_contacts: Optional[List[EmergencyContact]] = Field(None, max_length=3)
-
-
-@router.get("/profile")
+@router.get("/profile", response_model=PatientProfileResponse)
 async def get_patient_profile(
     current_user: Dict = Depends(get_current_patient)
 ):
@@ -81,7 +55,7 @@ async def get_patient_profile(
         )
 
 
-@router.get("/onboarding/status")
+@router.get("/onboarding/status", response_model=OnboardingStatusResponse)
 async def check_onboarding_status(
     current_user: Dict = Depends(get_current_patient)
 ):
@@ -122,7 +96,7 @@ async def check_onboarding_status(
 
 @router.post("/onboarding/complete")
 async def complete_onboarding(
-    onboarding_data: OnboardingData,
+    onboarding_data: PatientOnboardingData,
     current_user: Dict = Depends(get_current_patient)
 ):
     """
@@ -185,7 +159,7 @@ async def complete_onboarding(
 
 @router.patch("/profile")
 async def update_patient_profile(
-    update_data: ProfileUpdateData,
+    update_data: PatientProfileUpdate,
     current_user: Dict = Depends(get_current_patient)
 ):
     """
@@ -354,7 +328,7 @@ async def get_goal_completions(
         )
 
 
-@router.get("/goals/stats")
+@router.get("/goals/stats", response_model=GoalStatsResponse)
 async def get_goal_stats(
     current_user: Dict = Depends(get_current_patient)
 ):
