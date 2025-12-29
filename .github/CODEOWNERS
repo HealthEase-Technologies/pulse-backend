@@ -1,0 +1,18 @@
+# Global code owners
+* @Huzaifa785
+
+# Backend specific - require backend team review
+/app/routers/ @HealthEase-Technologies/backend-team
+/app/services/ @HealthEase-Technologies/backend-team
+/app/config/ @HealthEase-Technologies/backend-team  
+/app/models/ @HealthEase-Technologies/backend-team
+requirements.txt @HealthEase-Technologies/backend-team @Huzaifa785
+
+# Configuration files
+.env.example @Huzaifa785
+main.py @Huzaifa785
+
+# Documentation  
+README.md @Huzaifa785
+CONTRIBUTING.md @Huzaifa785
+.github/ @Huzaifa785
