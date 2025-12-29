@@ -1,21 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.auth.dependencies import get_current_admin
 from app.services.admin_service import admin_service
-from pydantic import BaseModel
-from typing import Dict, List, Optional
+from app.schemas.admin import (
+    UpdateLicenseStatusRequest,
+    ProviderUpdateRequest,
+    ProviderListResponse,
+    LicenseUrlResponse,
+    DeleteProviderResponse,
+    UserWithRoleResponse
+)
+from typing import Dict, List, Optional, Any
 
 router = APIRouter(prefix="/admins", tags=["admins"])
 
 
-class LicenseStatusUpdate(BaseModel):
-    status: str  # 'approved' or 'rejected'
-
-
-class ProviderUpdate(BaseModel):
-    full_name: Optional[str] = None
-
-
-@router.get("/providers")
+@router.get("/providers", response_model=Dict[str, Any])
 async def get_all_providers(
     license_status: Optional[str] = Query(None, description="Filter by license status"),
     current_user: Dict = Depends(get_current_admin)
@@ -46,7 +45,7 @@ async def get_all_providers(
 @router.patch("/providers/{provider_id}/license-status")
 async def update_provider_license_status(
     provider_id: str,
-    status_update: LicenseStatusUpdate,
+    status_update: UpdateLicenseStatusRequest,
     current_user: Dict = Depends(get_current_admin)
 ):
     """
@@ -76,7 +75,7 @@ async def update_provider_license_status(
         )
 
 
-@router.get("/providers/{provider_id}/license-url")
+@router.get("/providers/{provider_id}/license-url", response_model=LicenseUrlResponse)
 async def get_provider_license_url(
     provider_id: str,
     current_user: Dict = Depends(get_current_admin)
@@ -109,7 +108,7 @@ async def get_provider_license_url(
 @router.patch("/providers/{provider_id}")
 async def update_provider(
     provider_id: str,
-    provider_update: ProviderUpdate,
+    provider_update: ProviderUpdateRequest,
     current_user: Dict = Depends(get_current_admin)
 ):
     """
@@ -148,7 +147,7 @@ async def update_provider(
         )
 
 
-@router.delete("/providers/{provider_id}")
+@router.delete("/providers/{provider_id}", response_model=DeleteProviderResponse)
 async def delete_provider(
     provider_id: str,
     current_user: Dict = Depends(get_current_admin)
@@ -176,7 +175,7 @@ async def delete_provider(
         )
 
 
-@router.get("/users")
+@router.get("/users", response_model=Dict[str, Any])
 async def get_all_users(
     current_user: Dict = Depends(get_current_admin)
 ):

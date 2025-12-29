@@ -7,7 +7,7 @@ class EmergencyContact(BaseModel):
     """Emergency contact information"""
     name: str = Field(..., min_length=1, max_length=100)
     relationship: str = Field(..., min_length=1, max_length=50)
-    phone: str = Field(..., min_length=10, max_length=20)
+    phone: str = Field(..., min_length=7, max_length=20)
 
 
 class HealthGoal(BaseModel):
@@ -25,7 +25,7 @@ class PatientProfileResponse(BaseModel):
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
     health_goals: Optional[List[HealthGoal]] = []
-    health_restrictions: Optional[str] = None
+    health_restrictions: Optional[List[str]] = []
     reminder_frequency: Optional[str] = "daily"
     emergency_contacts: Optional[List[EmergencyContact]] = []
     onboarding_completed: bool = False
@@ -46,7 +46,7 @@ class PatientProfileResponse(BaseModel):
                     {"goal": "Exercise 30 mins", "frequency": "daily"},
                     {"goal": "Drink 8 glasses of water", "frequency": "daily"}
                 ],
-                "health_restrictions": "Diabetes,Hypertension",
+                "health_restrictions": ["Diabetes", "Hypertension"],
                 "reminder_frequency": "daily",
                 "emergency_contacts": [
                     {
