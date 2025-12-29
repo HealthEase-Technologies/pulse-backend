@@ -84,12 +84,12 @@ class ProviderListResponse(BaseModel):
 
 class UpdateLicenseStatusRequest(BaseModel):
     """Request to update provider license status"""
-    new_status: LicenseStatus = Field(..., description="New license status (approved/rejected)")
+    status: LicenseStatus = Field(..., description="New license status (approved/rejected)")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "new_status": "approved"
+                "status": "approved"
             }
         }
 
@@ -149,13 +149,13 @@ class UserWithRoleResponse(BaseModel):
 
 class LicenseUrlResponse(BaseModel):
     """Response with presigned URL for license"""
-    license_url: str
+    url: str = Field(..., description="Presigned URL for viewing the license")
     expires_in: int = Field(default=3600, description="URL expiration time in seconds")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "license_url": "https://s3.amazonaws.com/licenses/...?presigned-params",
+                "url": "https://s3.amazonaws.com/licenses/...?presigned-params",
                 "expires_in": 3600
             }
         }
