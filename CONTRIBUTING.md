@@ -12,63 +12,52 @@ Thanks for your interest in contributing to Pulse! This guide will help you get 
 - Access to team **Linear** workspace
 - **Environment credentials** (provided by team lead)
 
-### Repository Setup
-
-We have two main repositories:
-
-```bash
-# Frontend
-git clone https://github.com/HealthEase-Technologies/pulse-frontend.git
-cd pulse-frontend
-npm install
-cp .env.example .env.local
-npm run dev
-
-# Backend  
-git clone https://github.com/HealthEase-Technologies/pulse-backend.git
-cd pulse-backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload
-```
-
-**Verify setup:**
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000/docs
-
 ## First Time Git Setup
 
 **IMPORTANT:** When you clone a repository, Git only creates a local `main` branch by default. You need to set up tracking for all remote branches.
 
-### Step-by-Step Setup:
+### Frontend Repository Setup:
 
 ```bash
-# 1. Clone the repository (already done above)
+# Clone the repository
 git clone https://github.com/HealthEase-Technologies/pulse-frontend.git
 cd pulse-frontend
 
-# 2. Check what branches exist remotely
-git branch -r
-# You'll see: origin/develop, origin/main, origin/staging
-
-# 3. Set up local tracking branches for all remote branches
+# Set up all branches
 git checkout -b staging origin/staging
 git checkout -b develop origin/develop
-
-# 4. Switch to develop for daily work (this is your main working branch)
 git checkout develop
-git pull origin develop
 
-# 5. Verify all branches are available locally
+# Verify all branches exist
 git branch
 # Should show: * develop, main, staging
 
-# 6. Install dependencies and start development (ignore if already done)
+# Install dependencies and start development
 npm install
 cp .env.example .env.local
 npm run dev
+```
+
+### Backend Repository Setup:
+
+```bash
+# Clone the repository
+git clone https://github.com/HealthEase-Technologies/pulse-backend.git
+cd pulse-backend
+
+# Set up all branches
+git checkout -b staging origin/staging
+git checkout -b develop origin/develop
+git checkout develop
+
+# Set up Python environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload
 ```
 
 ### Why This Setup Is Required:
@@ -86,6 +75,10 @@ git checkout develop
 git pull origin develop
 git checkout -b feature/PULSE-XXX-your-feature
 ```
+
+**Verify setup:**
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000/docs
 
 ## Understanding Git Rebase
 
@@ -226,7 +219,7 @@ utils/           # Helper functions
 app/
 ├── auth/            # Authentication logic
 ├── config/          # Configuration & database
-├── images/          # Static Images
+├── images/          # Image handling utilities
 ├── routers/         # FastAPI route handlers
 ├── schemas/         # Pydantic models for request/response
 ├── services/        # Business logic
@@ -593,7 +586,7 @@ git push -f origin your-feature-branch
 
 ### Best Practices
 - **Ask questions early** - don't struggle alone for more than 30 minutes
-- **Share knowledge** with team members in Slack/Discord
+- **Share knowledge** with team members in Teams/WhatsApp
 - **Test thoroughly** before creating PRs
 - **Be responsive** to PR reviews (within 24 hours)
 - **Help others** during code review - we all learn together
@@ -645,7 +638,7 @@ git push -f origin your-feature-branch
 ### Account Access
 - [ ] Added to GitHub repositories (pulse-frontend, pulse-backend)
 - [ ] Access to Linear workspace
-- [ ] Team communication channels joined (Slack/Discord)
+- [ ] Team communication channels joined (Teams/WhatsApp)
 - [ ] AWS/Supabase credentials received from team lead
 
 ### Local Setup  
