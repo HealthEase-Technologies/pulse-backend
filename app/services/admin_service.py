@@ -23,7 +23,8 @@ class AdminService:
             # Query providers table
             query = supabase_admin.table("providers").select(
                 "id, user_id, full_name, license_url, license_key, license_status, "
-                "license_verified_at, license_verified_by, created_at, updated_at"
+                "license_verified_at, license_verified_by, years_of_experience, specialisation, about, "
+                "created_at, updated_at"
             )
 
             if license_status:
@@ -292,67 +293,28 @@ class AdminService:
                 detail=f"Failed to update provider: {str(e)}"
             )
 
-    @staticmethod
-    async def delete_provider(provider_id: str, admin_id: str) -> Dict:
-        """
-        Delete a provider (cascades to user deletion)
-
-        Args:
-            provider_id: Provider's ID
-            admin_id: Admin user ID performing the action
-
-        Returns:
-            Success message
-        """
-        try:
-            # Get provider info before deletion
-            provider_result = supabase_admin.table("providers").select(
-                "user_id, full_name"
-            ).eq("id", provider_id).execute()
-
-            if not provider_result.data:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Provider not found"
-                )
-
-            user_id = provider_result.data[0]["user_id"]
-            provider_name = provider_result.data[0]["full_name"]
-
-            # Log admin action before deletion
-            await AdminService.log_admin_action(
-                admin_id=admin_id,
-                action="delete_provider",
-                target_user_id=user_id,
-                details={
-                    "provider_id": provider_id,
-                    "provider_name": provider_name
-                }
-            )
-
-            # Delete user (cascades to provider due to ON DELETE CASCADE)
-            delete_result = supabase_admin.table("users").delete().eq(
-                "id", user_id
-            ).execute()
-
-            if not delete_result.data:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to delete provider"
-                )
-
-            return {
-                "message": f"Provider {provider_name} deleted successfully",
-                "deleted_user_id": user_id
-            }
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to delete provider: {str(e)}"
-            )
+    # Delete provider method disabled - not in use due to AWS Cognito credential issues
+    # Use reject license status instead to deactivate providers
+    # Uncomment and fix AWS Cognito credentials to re-enable this functionality
+    #
+    # @staticmethod
+    # async def delete_provider(provider_id: str, admin_id: str) -> Dict:
+    #     """
+    #     Delete a provider completely from all systems
+    #
+    #     This ensures data integrity by removing the provider from:
+    #     1. S3 (license file)
+    #     2. Cognito (authentication)
+    #     3. Supabase (database - cascades to provider table)
+    #
+    #     Args:
+    #         provider_id: Provider's ID
+    #         admin_id: Admin user ID performing the action
+    #
+    #     Returns:
+    #         Success message
+    #     """
+    #     # Implementation commented out - see delete_provider_disabled.txt for code
 
     @staticmethod
     async def log_admin_action(

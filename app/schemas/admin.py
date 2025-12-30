@@ -107,12 +107,18 @@ class ProviderUpdateRequest(BaseModel):
     """Request to update provider information"""
     full_name: Optional[str] = Field(None, min_length=1, max_length=100)
     license_status: Optional[LicenseStatus] = None
+    years_of_experience: Optional[int] = Field(None, ge=0, le=60, description="Years of medical experience (0-60)")
+    specialisation: Optional[str] = Field(None, min_length=1, max_length=200, description="Medical specialisation")
+    about: Optional[str] = Field(None, max_length=500, description="Short description about the provider")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "full_name": "Dr. Jane Smith",
-                "license_status": "approved"
+                "license_status": "approved",
+                "years_of_experience": 10,
+                "specialisation": "Cardiology",
+                "about": "Experienced cardiologist with focus on preventive care"
             }
         }
 

@@ -147,32 +147,34 @@ async def update_provider(
         )
 
 
-@router.delete("/providers/{provider_id}", response_model=DeleteProviderResponse)
-async def delete_provider(
-    provider_id: str,
-    current_user: Dict = Depends(get_current_admin)
-):
-    """
-    Delete a provider (Admin only)
-
-    Requirements: U-FR-2-4 (Admin provider management)
-    """
-    try:
-        admin_user_id = current_user["db_user"]["id"]
-
-        result = await admin_service.delete_provider(
-            provider_id=provider_id,
-            admin_id=admin_user_id
-        )
-
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete provider: {str(e)}"
-        )
+# Delete provider endpoint disabled due to AWS Cognito credential issues
+# Use reject license status instead to deactivate providers
+# @router.delete("/providers/{provider_id}", response_model=DeleteProviderResponse)
+# async def delete_provider(
+#     provider_id: str,
+#     current_user: Dict = Depends(get_current_admin)
+# ):
+#     """
+#     Delete a provider (Admin only)
+#
+#     Requirements: U-FR-2-4 (Admin provider management)
+#     """
+#     try:
+#         admin_user_id = current_user["db_user"]["id"]
+#
+#         result = await admin_service.delete_provider(
+#             provider_id=provider_id,
+#             admin_id=admin_user_id
+#         )
+#
+#         return result
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to delete provider: {str(e)}"
+#         )
 
 
 @router.get("/users", response_model=Dict[str, Any])
