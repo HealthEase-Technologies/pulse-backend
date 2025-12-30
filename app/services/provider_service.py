@@ -52,17 +52,29 @@ class ProviderService:
             }).eq("user_id", user_id).execute()
         else:
             # If no provider record exists, create one (use admin client for INSERT)
-            # Get user info first
+            # This is an edge case - provider records should be created during registration
+            # Get complete user profile to retrieve full_name from UserService
+            from app.services.user_service import UserService
+
             user_result = supabase_admin.table("users").select("*").eq("id", user_id).execute()
             if not user_result.data:
                 raise Exception("User not found")
 
             user = user_result.data[0]
+            cognito_id = user.get("cognito_id")
+
+            # Get complete profile to retrieve full_name (stored in providers table during registration)
+            # If this fails, use empty string as fallback
+            full_name = ""
+            if cognito_id:
+                complete_profile = await UserService.get_complete_user_profile(cognito_id)
+                if complete_profile:
+                    full_name = complete_profile.get("full_name", "")
 
             # Create provider record using admin client to bypass RLS
             insert_result = supabase_admin.table("providers").insert({
                 "user_id": user_id,
-                "full_name": user.get("full_name", ""),
+                "full_name": full_name,
                 "license_url": upload_result["file_url"],
                 "license_key": upload_result["file_key"],
                 "license_status": "pending"
