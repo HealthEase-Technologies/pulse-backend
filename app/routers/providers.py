@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from app.auth.dependencies import get_current_provider
 from app.services.provider_service import provider_service
 from app.schemas.provider import LicenseUploadResponse, ProviderProfileResponse
-from typing import Dict
+from typing import Dict, Optional
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/providers", tags=["providers"])
@@ -10,10 +10,13 @@ router = APIRouter(prefix="/providers", tags=["providers"])
 @router.post("/upload-license", response_model=LicenseUploadResponse)
 async def upload_medical_license(
     file: UploadFile = File(...),
+    years_of_experience: Optional[int] = Form(None),
+    specialisation: str = Form(...),
+    about: Optional[str] = Form(None),
     current_user: Dict = Depends(get_current_provider)
 ):
     """
-    Upload medical license document to S3 (Provider only)
+    Upload medical license document to S3 with provider details (Provider only)
 
     Requirements: U-FR-8-1, U-FR-2-7
     """
@@ -34,13 +37,37 @@ async def upload_medical_license(
                 detail="File size exceeds 10MB limit"
             )
 
+        # Validate years of experience
+        if years_of_experience is not None and (years_of_experience < 0 or years_of_experience > 60):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Years of experience must be between 0 and 60"
+            )
+
+        # Validate specialisation
+        if not specialisation or not specialisation.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Specialisation is required"
+            )
+
+        # Validate about length
+        if about and len(about) > 500:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="About description must be 500 characters or less"
+            )
+
         # Upload using provider service
         user_id = current_user["db_user"]["id"]
         result = await provider_service.upload_license(
             user_id=user_id,
             file_content=contents,
             file_name=file.filename,
-            content_type=file.content_type
+            content_type=file.content_type,
+            years_of_experience=years_of_experience,
+            specialisation=specialisation.strip(),
+            about=about.strip() if about and about.strip() else None
         )
 
         return LicenseUploadResponse(
@@ -99,6 +126,9 @@ async def get_provider_profile(
             phone=provider_data.get("phone"),
             license_url=provider_data.get("license_url"),
             license_status=provider_data.get("license_status", "pending"),
+            years_of_experience=provider_data.get("years_of_experience"),
+            specialisation=provider_data.get("specialisation"),
+            about=provider_data.get("about"),
             created_at=created_at,
             updated_at=updated_at
         )

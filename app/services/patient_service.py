@@ -325,12 +325,10 @@ class PatientService:
             total_completed = len([c for c in completions if c["status"] == "completed"])
             total_missed = len([c for c in completions if c["status"] == "missed"])
 
-            # Calculate completion rate
-            completion_rate = 0
+            # Calculate completion rate (completed / total tracked goals)
+            completion_rate = 0.0
             if total_tracked > 0:
-                completed_or_missed = total_completed + total_missed
-                if completed_or_missed > 0:
-                    completion_rate = round((total_completed / completed_or_missed) * 100, 1)
+                completion_rate = round((total_completed / total_tracked) * 100, 1)
 
             # Calculate current streak (consecutive days with all goals completed)
             current_streak = 0
