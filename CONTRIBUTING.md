@@ -403,6 +403,12 @@ S3_BUCKET_NAME=your-bucket-name
 SECRET_KEY=generate_with_python_secrets_module
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
+
+# Email Configuration (for notifications)
+EMAIL_SENDER=sender_email_address
+EMAIL_PASSWORD=email_app_password
+SMTP_SERVER=smtp_server
+SMTP_PORT=smtp_port_number
 ```
 
 **CRITICAL: Never commit .env files - they're in .gitignore for security**
@@ -488,8 +494,8 @@ Closes PULSE-XXX
 | Environment | Trigger | URL |
 |-------------|---------|-----|
 | **Production** | `main` branch | https://pulse-so.vercel.app |
-| **Staging** | `staging` branch | https://pulse-frontend-git-staging-healthease-technologies.vercel.app |
-| **Development** | `develop` branch | https://pulse-frontend-git-develop-healthease-technologies.vercel.app |
+| **Staging** | `staging` branch | https://pulse-backend-git-staging-huzaifa785s-projects.vercel.app |
+| **Development** | `develop` branch | https://pulse-backend-git-develop-huzaifa785s-projects.vercel.app |
 | **Preview** | Any PR | *-git-branch-*.vercel.app |
 
 ### Environment Flow
