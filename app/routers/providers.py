@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from app.auth.dependencies import get_current_provider
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from app.auth.dependencies import get_current_provider, get_current_patient
 from app.services.provider_service import provider_service
 from app.schemas.provider import LicenseUploadResponse, ProviderProfileResponse
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/providers", tags=["providers"])
@@ -178,4 +178,104 @@ async def get_license_presigned_url(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate view URL: {str(e)}"
+        )
+
+
+@router.get("/directory", response_model=Dict[str, Any])
+async def get_provider_directory(
+    specialisation: Optional[str] = Query(None, description="Filter by specialisation"),
+    search: Optional[str] = Query(None, description="Search by provider name"),
+    current_user: Dict = Depends(get_current_patient)
+):
+    """
+    Get approved providers for patient HCP directory
+
+    Query params:
+    - specialisation: Filter by medical specialisation
+    - search: Search by provider name
+
+    Shows connection status for current patient
+
+    Requirements: Sprint 3 - Patient HCP Directory
+    """
+    try:
+        from app.config.database import supabase_admin
+
+        patient_user_id = current_user["db_user"]["id"]
+
+        # Get patient's database ID
+        patient_result = supabase_admin.table("patients").select("id").eq(
+            "user_id", patient_user_id
+        ).execute()
+
+        if not patient_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Patient profile not found"
+            )
+
+        patient_id = patient_result.data[0]["id"]
+
+        # Get all approved providers
+        query = supabase_admin.table("providers").select(
+            "id, user_id, full_name, specialisation, years_of_experience, about, license_status"
+        ).eq("license_status", "approved")
+
+        # Apply filters
+        if specialisation:
+            query = query.ilike("specialisation", f"%{specialisation}%")
+
+        result = query.execute()
+
+        if not result.data:
+            return {
+                "total": 0,
+                "providers": []
+            }
+
+        # Get patient's connections to check status
+        connections = supabase_admin.table("patient_provider_connections").select(
+            "provider_id, status"
+        ).eq("patient_id", patient_id).execute()
+
+        connection_map = {}
+        if connections.data:
+            for conn in connections.data:
+                connection_map[conn["provider_id"]] = conn["status"]
+
+        # Enrich providers with email and connection status
+        enriched_providers = []
+        for provider in result.data:
+            # Get provider email
+            user_result = supabase_admin.table("users").select("email").eq(
+                "id", provider["user_id"]
+            ).execute()
+
+            # Apply search filter
+            if search and search.lower() not in provider["full_name"].lower():
+                continue
+
+            provider_data = {
+                "provider_id": provider["user_id"],
+                "provider_name": provider["full_name"],
+                "provider_email": user_result.data[0]["email"] if user_result.data else None,
+                "specialisation": provider.get("specialisation"),
+                "years_of_experience": provider.get("years_of_experience"),
+                "about": provider.get("about"),
+                "connection_status": connection_map.get(provider["id"], "none")
+            }
+
+            enriched_providers.append(provider_data)
+
+        return {
+            "total": len(enriched_providers),
+            "providers": enriched_providers
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get provider directory: {str(e)}"
         )

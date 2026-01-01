@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.auth.dependencies import get_current_patient
+from app.auth.dependencies import get_current_patient, get_current_provider
 from app.services.patient_service import patient_service
 from app.schemas.patient import (
     PatientOnboardingData,
@@ -8,7 +8,7 @@ from app.schemas.patient import (
     OnboardingStatusResponse
 )
 from app.schemas.goal import GoalStatsResponse
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 
 router = APIRouter(prefix="/patients", tags=["patients"])
@@ -378,4 +378,120 @@ async def initialize_daily_goals(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to initialize daily goals: {str(e)}"
+        )
+
+
+@router.get("/{patient_user_id}/details", response_model=Dict[str, Any])
+async def get_patient_details_for_provider(
+    patient_user_id: str,
+    current_user: Dict = Depends(get_current_provider)
+):
+    """
+    Provider views connected patient's details
+
+    Authorization: Only if connection is approved
+
+    Requirements: Sprint 3 - Provider views connected patient details
+    """
+    try:
+        from app.config.database import supabase_admin
+
+        provider_user_id = current_user["db_user"]["id"]
+
+        # Get provider's database ID
+        provider_result = supabase_admin.table("providers").select("id").eq(
+            "user_id", provider_user_id
+        ).execute()
+
+        if not provider_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Provider profile not found"
+            )
+
+        provider_id = provider_result.data[0]["id"]
+
+        # Get patient's database ID
+        patient_result = supabase_admin.table("patients").select("id").eq(
+            "user_id", patient_user_id
+        ).execute()
+
+        if not patient_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Patient not found"
+            )
+
+        patient_id = patient_result.data[0]["id"]
+
+        # Check if connection exists and is approved
+        connection = supabase_admin.table("patient_provider_connections").select(
+            "*"
+        ).eq("patient_id", patient_id).eq("provider_id", provider_id).eq("status", "accepted").execute()
+
+        if not connection.data:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view details of patients you are connected with"
+            )
+
+        # Get patient full details
+        profile = await patient_service.get_patient_profile(patient_user_id)
+
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Patient profile not found"
+            )
+
+        # health_goals is already JSONB array, no conversion needed
+        if not profile.get("health_goals"):
+            profile["health_goals"] = []
+
+        # Convert comma-separated health_restrictions to array
+        if profile.get("health_restrictions"):
+            profile["health_restrictions"] = profile["health_restrictions"].split(",")
+        else:
+            profile["health_restrictions"] = []
+
+        # Get patient email
+        user_result = supabase_admin.table("users").select("email").eq(
+            "id", patient_user_id
+        ).execute()
+
+        # Calculate age
+        age = None
+        if profile.get("date_of_birth"):
+            from datetime import date
+            dob = profile["date_of_birth"]
+            if isinstance(dob, str):
+                dob = date.fromisoformat(dob)
+            today = date.today()
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+        # Get goal stats
+        stats = await patient_service.get_goal_stats(patient_user_id)
+
+        return {
+            "patient_id": patient_user_id,
+            "full_name": profile["full_name"],
+            "email": user_result.data[0]["email"] if user_result.data else None,
+            "age": age,
+            "date_of_birth": profile.get("date_of_birth"),
+            "height_cm": profile.get("height_cm"),
+            "weight_kg": profile.get("weight_kg"),
+            "health_goals": profile.get("health_goals", []),
+            "health_restrictions": profile.get("health_restrictions", []),
+            "reminder_frequency": profile.get("reminder_frequency"),
+            "emergency_contacts": profile.get("emergency_contacts", []),
+            "goal_stats": stats,
+            "connected_since": connection.data[0].get("accepted_at")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get patient details: {str(e)}"
         )
