@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
-from app.routers import auth, users, admins, providers, patients
+from app.routers import auth, users, admins, providers, patients, connections
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.patient_service import PatientService
@@ -40,6 +40,7 @@ app.include_router(users.router, prefix=settings.api_v1_str)
 app.include_router(admins.router, prefix=settings.api_v1_str)
 app.include_router(providers.router, prefix=settings.api_v1_str)
 app.include_router(patients.router, prefix=settings.api_v1_str)
+app.include_router(connections.router, prefix=settings.api_v1_str)
 
 @app.get("/")
 async def root():
