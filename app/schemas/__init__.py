@@ -65,7 +65,7 @@ from app.schemas.connection import (
     DisconnectProviderResponse
 )
 
-# Device schemas
+# Device schemas (Sprint 4.2)
 from app.schemas.device import (
     DeviceType,
     DeviceStatus,
@@ -78,7 +78,7 @@ from app.schemas.device import (
     SimulateDeviceDataResponse
 )
 
-# Biomarker schemas
+# Biomarker schemas (Sprint 4.2)
 from app.schemas.biomarker import (
     BiomarkerType,
     BiomarkerSource,
@@ -87,6 +87,14 @@ from app.schemas.biomarker import (
     BiomarkerResponse,
     LatestBiomarkerReading,
     BiomarkerDashboardSummary
+)
+
+# Health Summary schemas (Sprint 4.3)
+from app.schemas.health_summary import (
+    SummaryType,
+    OverallHealthStatus,
+    DailyHealthSummaryResponse,
+    MorningBriefingEmailData
 )
 
 __all__ = [
@@ -135,7 +143,7 @@ __all__ = [
     "UpdateConnectionStatusRequest",
     "ConnectionStatusResponse",
     "DisconnectProviderResponse",
-    # Device
+    # Device (Sprint 4.2)
     "DeviceType",
     "DeviceStatus",
     "DeviceTypeInfo",
@@ -145,7 +153,7 @@ __all__ = [
     "DisconnectDeviceResponse",
     "SimulateDeviceDataRequest",
     "SimulateDeviceDataResponse",
-    # Biomarker
+    # Biomarker (Sprint 4.2)
     "BiomarkerType",
     "BiomarkerSource",
     "BiomarkerRangeResponse",
@@ -153,4 +161,9 @@ __all__ = [
     "BiomarkerResponse",
     "LatestBiomarkerReading",
     "BiomarkerDashboardSummary",
+    # Health Summary (Sprint 4.3)
+    "SummaryType",
+    "OverallHealthStatus",
+    "DailyHealthSummaryResponse",
+    "MorningBriefingEmailData",
 ]

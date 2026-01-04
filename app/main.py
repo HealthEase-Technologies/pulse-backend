@@ -1,10 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
-from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers
+from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.patient_service import PatientService
+from app.services.health_summary_service import health_summary_service
 import logging
 
 # Configure logging
@@ -41,9 +42,11 @@ app.include_router(admins.router, prefix=settings.api_v1_str)
 app.include_router(providers.router, prefix=settings.api_v1_str)
 app.include_router(patients.router, prefix=settings.api_v1_str)
 app.include_router(connections.router, prefix=settings.api_v1_str)
-# Sprint 4 - Devices and Biomarkers
+# Sprint 4.2 - Devices and Biomarkers
 app.include_router(devices.router, prefix=settings.api_v1_str)
 app.include_router(biomarkers.router, prefix=settings.api_v1_str)
+# Sprint 4.3 - Health Summaries
+app.include_router(health_summaries.router, prefix=settings.api_v1_str)
 
 @app.get("/")
 async def root():
@@ -88,6 +91,44 @@ async def mark_missed_goals():
     except Exception as e:
         logger.error(f"Error marking missed goals: {str(e)}")
 
+async def generate_morning_briefing():
+    """
+    Cron job to generate morning briefing for all users
+    Runs daily at 00:10 UTC (after goal initialization)
+    Aggregates previous day's biomarker data
+    """
+    try:
+        logger.info("Starting morning briefing generation...")
+        result = await health_summary_service.generate_morning_briefing()
+        logger.info(f"Morning briefing generation completed: {result}")
+    except Exception as e:
+        logger.error(f"Error generating morning briefing: {str(e)}")
+
+async def send_morning_briefing_emails():
+    """
+    Cron job to send morning briefing emails
+    Runs daily at 00:15 UTC (after briefing generation)
+    """
+    try:
+        logger.info("Starting to send morning briefing emails...")
+        count = await health_summary_service.send_morning_briefing_emails()
+        logger.info(f"Sent {count} morning briefing emails")
+    except Exception as e:
+        logger.error(f"Error sending morning briefing emails: {str(e)}")
+
+async def generate_evening_summary():
+    """
+    Cron job to generate evening summary for all users
+    Runs daily at 23:59 UTC
+    Aggregates current day's biomarker data
+    """
+    try:
+        logger.info("Starting evening summary generation...")
+        result = await health_summary_service.generate_evening_summary()
+        logger.info(f"Evening summary generation completed: {result}")
+    except Exception as e:
+        logger.error(f"Error generating evening summary: {str(e)}")
+
 @app.on_event("startup")
 async def startup_event():
     """
@@ -112,11 +153,42 @@ async def startup_event():
             replace_existing=True
         )
 
+        # Sprint 4.3 - Health Summary Cron Jobs
+        # Generate morning briefing at 00:10 UTC (after goal initialization)
+        scheduler.add_job(
+            generate_morning_briefing,
+            CronTrigger(hour=0, minute=10, timezone="UTC"),
+            id="generate_morning_briefing",
+            name="Generate morning health briefing for all users",
+            replace_existing=True
+        )
+
+        # Send morning briefing emails at 00:15 UTC
+        scheduler.add_job(
+            send_morning_briefing_emails,
+            CronTrigger(hour=0, minute=15, timezone="UTC"),
+            id="send_morning_briefing_emails",
+            name="Send morning briefing emails",
+            replace_existing=True
+        )
+
+        # Generate evening summary at 23:59 UTC
+        scheduler.add_job(
+            generate_evening_summary,
+            CronTrigger(hour=23, minute=59, timezone="UTC"),
+            id="generate_evening_summary",
+            name="Generate evening health summary for all users",
+            replace_existing=True
+        )
+
         scheduler.start()
         logger.info("Scheduler started successfully with daily cron jobs")
         logger.info("Jobs scheduled:")
         logger.info("  - Daily goal initialization: 00:01 UTC")
         logger.info("  - Mark missed goals: 00:05 UTC")
+        logger.info("  - Generate morning briefing: 00:10 UTC")
+        logger.info("  - Send morning briefing emails: 00:15 UTC")
+        logger.info("  - Generate evening summary: 23:59 UTC")
     except Exception as e:
         logger.error(f"Error starting scheduler: {str(e)}")
 
