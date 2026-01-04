@@ -65,6 +65,30 @@ from app.schemas.connection import (
     DisconnectProviderResponse
 )
 
+# Device schemas
+from app.schemas.device import (
+    DeviceType,
+    DeviceStatus,
+    DeviceTypeInfo,
+    ConnectDeviceRequest,
+    DeviceResponse,
+    DeviceWithTypeInfo,
+    DisconnectDeviceResponse,
+    SimulateDeviceDataRequest,
+    SimulateDeviceDataResponse
+)
+
+# Biomarker schemas
+from app.schemas.biomarker import (
+    BiomarkerType,
+    BiomarkerSource,
+    BiomarkerRangeResponse,
+    InsertBiomarkerRequest,
+    BiomarkerResponse,
+    LatestBiomarkerReading,
+    BiomarkerDashboardSummary
+)
+
 __all__ = [
     # User
     "UserRole",
@@ -111,4 +135,22 @@ __all__ = [
     "UpdateConnectionStatusRequest",
     "ConnectionStatusResponse",
     "DisconnectProviderResponse",
+    # Device
+    "DeviceType",
+    "DeviceStatus",
+    "DeviceTypeInfo",
+    "ConnectDeviceRequest",
+    "DeviceResponse",
+    "DeviceWithTypeInfo",
+    "DisconnectDeviceResponse",
+    "SimulateDeviceDataRequest",
+    "SimulateDeviceDataResponse",
+    # Biomarker
+    "BiomarkerType",
+    "BiomarkerSource",
+    "BiomarkerRangeResponse",
+    "InsertBiomarkerRequest",
+    "BiomarkerResponse",
+    "LatestBiomarkerReading",
+    "BiomarkerDashboardSummary",
 ]
