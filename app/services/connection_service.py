@@ -85,23 +85,53 @@ class ConnectionService:
                     detail="You already have a pending request to this provider"
                 )
 
-            # Create connection request
-            connection_data = {
-                "patient_id": patient_id,
-                "provider_id": provider_id,
-                "status": "pending",
-                "requested_at": datetime.now(timezone.utc).isoformat()
-            }
+            # Check if there's an existing disconnected or rejected connection
+            # If so, reuse it instead of creating a new one (to respect unique constraint)
+            existing_connection = supabase_admin.table("patient_provider_connections").select(
+                "*"
+            ).eq("patient_id", patient_id).eq(
+                "provider_id", provider_id
+            ).in_("status", ["disconnected", "rejected"]).execute()
 
-            result = supabase_admin.table("patient_provider_connections").insert(
-                connection_data
-            ).execute()
+            if existing_connection.data:
+                # Reuse existing connection - update it back to pending
+                update_data = {
+                    "status": "pending",
+                    "requested_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    # Clear previous timestamps
+                    "accepted_at": None,
+                    "rejected_at": None,
+                    "disconnected_at": None
+                }
 
-            if not result.data:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to create connection request"
-                )
+                result = supabase_admin.table("patient_provider_connections").update(
+                    update_data
+                ).eq("id", existing_connection.data[0]["id"]).execute()
+
+                if not result.data:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to update connection request"
+                    )
+            else:
+                # Create new connection request
+                connection_data = {
+                    "patient_id": patient_id,
+                    "provider_id": provider_id,
+                    "status": "pending",
+                    "requested_at": datetime.now(timezone.utc).isoformat()
+                }
+
+                result = supabase_admin.table("patient_provider_connections").insert(
+                    connection_data
+                ).execute()
+
+                if not result.data:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to create connection request"
+                    )
 
             # Send email notification to provider
             try:
