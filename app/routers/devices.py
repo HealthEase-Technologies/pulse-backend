@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.auth.dependencies import get_current_user_patient_or_provider
+from app.auth.dependencies import get_current_patient
 from app.services.device_service import device_service
 from app.schemas.device import (
     DeviceTypeInfo,
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/devices", tags=["devices"])
 
 @router.get("/types", response_model=List[DeviceTypeInfo])
 async def get_available_device_types(
-    current_user: Dict = Depends(get_current_user_patient_or_provider)
+    current_user: Dict = Depends(get_current_patient)
 ):
     """
     Get all available device types that can be connected
@@ -43,7 +43,7 @@ async def get_available_device_types(
 @router.post("/connect", response_model=Dict[str, Any])
 async def connect_device(
     request: ConnectDeviceRequest,
-    current_user: Dict = Depends(get_current_user_patient_or_provider)
+    current_user: Dict = Depends(get_current_patient)
 ):
     """
     Connect a new device to user's account
@@ -65,7 +65,7 @@ async def connect_device(
 @router.delete("/{device_id}/disconnect", response_model=DisconnectDeviceResponse)
 async def disconnect_device(
     device_id: str,
-    current_user: Dict = Depends(get_current_user_patient_or_provider)
+    current_user: Dict = Depends(get_current_patient)
 ):
     """
     Disconnect a device from user's account
@@ -82,7 +82,7 @@ async def disconnect_device(
 
 @router.get("/my-devices", response_model=List[DeviceWithTypeInfo])
 async def get_my_devices(
-    current_user: Dict = Depends(get_current_user_patient_or_provider)
+    current_user: Dict = Depends(get_current_patient)
 ):
     """
     Get all devices connected to current user's account
@@ -102,7 +102,7 @@ async def get_my_devices(
 @router.get("/{device_id}", response_model=DeviceWithTypeInfo)
 async def get_device_details(
     device_id: str,
-    current_user: Dict = Depends(get_current_user_patient_or_provider)
+    current_user: Dict = Depends(get_current_patient)
 ):
     """
     Get details of a specific device
@@ -121,7 +121,7 @@ async def get_device_details(
 async def simulate_device_data(
     device_id: str,
     request: SimulateDeviceDataRequest,
-    current_user: Dict = Depends(get_current_user_patient_or_provider)
+    current_user: Dict = Depends(get_current_patient)
 ):
     """
     Manually trigger biomarker data simulation for a connected device
