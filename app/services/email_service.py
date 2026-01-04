@@ -233,6 +233,174 @@ The Pulse Team
 
         return EmailService.send_email(provider_email, subject, body_text, body_html)
 
+    @staticmethod
+    def send_morning_briefing(
+        patient_email: str,
+        patient_name: str,
+        summary_data: dict
+    ):
+        """
+        Send morning health briefing to patient
+
+        This email contains yesterday's health summary with insights and alerts.
+
+        Args:
+            patient_email: Patient's email address
+            patient_name: Patient's full name
+            summary_data: Health summary data (from daily_health_summaries.summary_data JSONB)
+
+        Template includes:
+        - Date of summary
+        - Overall health status
+        - Key metrics (heart rate, BP, glucose, steps, sleep) with status indicators
+        - Insights (positive health observations)
+        - Alerts (concerning values that need attention)
+        - Link to view full summary in app
+
+        TODO: Implement this function
+        - Extract metrics from summary_data
+        - Format metrics for email display (with emojis/colors for status)
+        - Build HTML email template with proper styling
+        - Call send_email() with formatted subject and body
+        - Return True/False based on send success
+        """
+        subject = f"Your Daily Health Briefing - {summary_data.get('date', 'Today')}"
+
+        # TODO: Extract and format metrics from summary_data
+        # Example structure:
+        # metrics = summary_data.get('metrics', {})
+        # heart_rate = metrics.get('heart_rate', {})
+        # insights = summary_data.get('insights', [])
+        # alerts = summary_data.get('alerts', [])
+
+        body_text = f"""
+Good morning {patient_name},
+
+Here's your health summary for yesterday.
+
+[TODO: Format metrics, insights, and alerts in plain text]
+
+View your full health dashboard at: https://pulse-so.vercel.app/dashboard
+
+Best regards,
+The Pulse Team
+"""
+
+        body_html = f"""
+<html>
+  <head>
+    <style>
+      body {{
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        color: #333;
+      }}
+      .container {{
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+      }}
+      .header {{
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        text-align: center;
+        border-radius: 10px 10px 0 0;
+      }}
+      .content {{
+        background: #ffffff;
+        padding: 30px;
+        border: 1px solid #e0e0e0;
+      }}
+      .metric-card {{
+        background: #f9f9f9;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+      }}
+      .status-good {{
+        color: #28a745;
+        font-weight: bold;
+      }}
+      .status-alert {{
+        color: #dc3545;
+        font-weight: bold;
+      }}
+      .insight {{
+        background: #e8f4f8;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 5px;
+      }}
+      .alert-box {{
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 5px;
+      }}
+      .cta-button {{
+        display: inline-block;
+        background: #667eea;
+        color: white;
+        padding: 12px 24px;
+        text-decoration: none;
+        border-radius: 5px;
+        margin: 20px 0;
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🌅 Good Morning, {patient_name}!</h1>
+        <p>Your Daily Health Briefing</p>
+      </div>
+      <div class="content">
+        <p><strong>Summary for:</strong> {summary_data.get('date', 'Yesterday')}</p>
+
+        <!-- TODO: Add formatted metrics cards here -->
+        <!-- Example:
+        <div class="metric-card">
+          <h3>❤️ Heart Rate</h3>
+          <p>Average: <span class="status-good">72 bpm</span></p>
+          <p>Status: Optimal Range</p>
+        </div>
+        -->
+
+        <!-- TODO: Add insights section -->
+        <!-- Example:
+        <h3>✨ Insights</h3>
+        <div class="insight">
+          Your heart rate was in optimal range throughout the day
+        </div>
+        -->
+
+        <!-- TODO: Add alerts section if any -->
+        <!-- Example:
+        <div class="alert-box">
+          <h3>⚠️ Attention Needed</h3>
+          <p>Your blood glucose was elevated in the evening</p>
+        </div>
+        -->
+
+        <a href="https://pulse-so.vercel.app/dashboard" class="cta-button">
+          View Full Dashboard
+        </a>
+
+        <p style="margin-top: 30px; color: #666; font-size: 14px;">
+          Best regards,<br>
+          The Pulse Team
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
+"""
+
+        return EmailService.send_email(patient_email, subject, body_text, body_html)
+
 
 # Create singleton instance
 email_service = EmailService()
