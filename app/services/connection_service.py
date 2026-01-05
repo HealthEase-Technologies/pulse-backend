@@ -219,7 +219,7 @@ class ConnectionService:
 
                 # Get provider details
                 provider_result = supabase_admin.table("providers").select(
-                    "user_id, full_name, specialisation, years_of_experience, license_status"
+                    "user_id, full_name, specialisation, years_of_experience, license_status, health_restrictions"
                 ).eq("id", provider_id).execute()
 
                 if provider_result.data:
@@ -235,6 +235,7 @@ class ConnectionService:
                     connection["provider_specialisation"] = provider.get("specialisation")
                     connection["provider_experience"] = provider.get("years_of_experience")
                     connection["provider_license_status"] = provider.get("license_status")
+                    connection["provider_health_restrictions"] = provider.get("health_restrictions", "").split(",") if provider.get("health_restrictions") else []
 
                 enriched_connections.append(connection)
 
@@ -297,7 +298,7 @@ class ConnectionService:
 
                 # Get patient details
                 patient_result = supabase_admin.table("patients").select(
-                    "user_id, full_name, date_of_birth, health_goals"
+                    "user_id, full_name, date_of_birth, health_goals, health_restrictions"
                 ).eq("id", patient_id).execute()
 
                 if patient_result.data:
@@ -322,6 +323,7 @@ class ConnectionService:
                     connection["patient_email"] = user_result.data[0]["email"] if user_result.data else None
                     connection["patient_age"] = age
                     connection["patient_health_goals"] = patient.get("health_goals", [])
+                    connection["patient_health_restrictions"] = patient.get("health_restrictions", "").split(",") if patient.get("health_restrictions") else []
 
                 enriched_requests.append(connection)
 
