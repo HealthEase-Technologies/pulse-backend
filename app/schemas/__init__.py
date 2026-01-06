@@ -65,6 +65,38 @@ from app.schemas.connection import (
     DisconnectProviderResponse
 )
 
+# Device schemas (Sprint 4.2)
+from app.schemas.device import (
+    DeviceType,
+    DeviceStatus,
+    DeviceTypeInfo,
+    ConnectDeviceRequest,
+    DeviceResponse,
+    DeviceWithTypeInfo,
+    DisconnectDeviceResponse,
+    SimulateDeviceDataRequest,
+    SimulateDeviceDataResponse
+)
+
+# Biomarker schemas (Sprint 4.2)
+from app.schemas.biomarker import (
+    BiomarkerType,
+    BiomarkerSource,
+    BiomarkerRangeResponse,
+    InsertBiomarkerRequest,
+    BiomarkerResponse,
+    LatestBiomarkerReading,
+    BiomarkerDashboardSummary
+)
+
+# Health Summary schemas (Sprint 4.3)
+from app.schemas.health_summary import (
+    SummaryType,
+    OverallHealthStatus,
+    DailyHealthSummaryResponse,
+    MorningBriefingEmailData
+)
+
 __all__ = [
     # User
     "UserRole",
@@ -111,4 +143,27 @@ __all__ = [
     "UpdateConnectionStatusRequest",
     "ConnectionStatusResponse",
     "DisconnectProviderResponse",
+    # Device (Sprint 4.2)
+    "DeviceType",
+    "DeviceStatus",
+    "DeviceTypeInfo",
+    "ConnectDeviceRequest",
+    "DeviceResponse",
+    "DeviceWithTypeInfo",
+    "DisconnectDeviceResponse",
+    "SimulateDeviceDataRequest",
+    "SimulateDeviceDataResponse",
+    # Biomarker (Sprint 4.2)
+    "BiomarkerType",
+    "BiomarkerSource",
+    "BiomarkerRangeResponse",
+    "InsertBiomarkerRequest",
+    "BiomarkerResponse",
+    "LatestBiomarkerReading",
+    "BiomarkerDashboardSummary",
+    # Health Summary (Sprint 4.3)
+    "SummaryType",
+    "OverallHealthStatus",
+    "DailyHealthSummaryResponse",
+    "MorningBriefingEmailData",
 ]

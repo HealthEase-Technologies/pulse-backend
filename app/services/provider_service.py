@@ -12,7 +12,10 @@ class ProviderService:
         user_id: str,
         file_content: bytes,
         file_name: str,
-        content_type: str
+        content_type: str,
+        years_of_experience: Optional[int] = None,
+        specialisation: Optional[str] = None,
+        about: Optional[str] = None
     ) -> Dict:
         """
         Upload medical license to S3 and update provider record
@@ -22,6 +25,9 @@ class ProviderService:
             file_content: File content as bytes
             file_name: Original file name
             content_type: MIME type of the file
+            years_of_experience: Years of medical experience (0-60)
+            specialisation: Medical specialisation/field
+            about: Short description about the provider
 
         Returns:
             dict with upload details
@@ -42,31 +48,64 @@ class ProviderService:
             "user_id", user_id
         ).execute()
 
+        # Prepare update data
+        update_data = {
+            "license_url": upload_result["file_url"],
+            "license_key": upload_result["file_key"],
+            "license_status": "pending",
+            "updated_at": updated_at
+        }
+
+        # Add optional fields if provided
+        if years_of_experience is not None:
+            update_data["years_of_experience"] = years_of_experience
+        if specialisation:
+            update_data["specialisation"] = specialisation
+        if about:
+            update_data["about"] = about
+
         if provider_result.data:
             # Update existing provider record
-            update_result = supabase_admin.table("providers").update({
-                "license_url": upload_result["file_url"],
-                "license_key": upload_result["file_key"],
-                "license_status": "pending",
-                "updated_at": updated_at
-            }).eq("user_id", user_id).execute()
+            update_result = supabase_admin.table("providers").update(update_data).eq("user_id", user_id).execute()
         else:
             # If no provider record exists, create one (use admin client for INSERT)
-            # Get user info first
+            # This is an edge case - provider records should be created during registration
+            # Get complete user profile to retrieve full_name from UserService
+            from app.services.user_service import UserService
+
             user_result = supabase_admin.table("users").select("*").eq("id", user_id).execute()
             if not user_result.data:
                 raise Exception("User not found")
 
             user = user_result.data[0]
+            cognito_id = user.get("cognito_id")
+
+            # Get complete profile to retrieve full_name (stored in providers table during registration)
+            # If this fails, use empty string as fallback
+            full_name = ""
+            if cognito_id:
+                complete_profile = await UserService.get_complete_user_profile(cognito_id)
+                if complete_profile:
+                    full_name = complete_profile.get("full_name", "")
 
             # Create provider record using admin client to bypass RLS
-            insert_result = supabase_admin.table("providers").insert({
+            insert_data = {
                 "user_id": user_id,
-                "full_name": user.get("full_name", ""),
+                "full_name": full_name,
                 "license_url": upload_result["file_url"],
                 "license_key": upload_result["file_key"],
                 "license_status": "pending"
-            }).execute()
+            }
+
+            # Add optional fields if provided
+            if years_of_experience is not None:
+                insert_data["years_of_experience"] = years_of_experience
+            if specialisation:
+                insert_data["specialisation"] = specialisation
+            if about:
+                insert_data["about"] = about
+
+            insert_result = supabase_admin.table("providers").insert(insert_data).execute()
 
         return {
             "license_url": upload_result["file_url"],
