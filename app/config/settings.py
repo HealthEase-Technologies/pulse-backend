@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    email_sender: str
+    email_password: str
+    smtp_server: str
+    smtp_port: int
     
     class Config:
         env_file = ".env"
