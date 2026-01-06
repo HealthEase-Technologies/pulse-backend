@@ -2,6 +2,7 @@ from app.config.database import supabase_admin
 from fastapi import HTTPException, status
 from typing import Dict, Optional, List
 from datetime import datetime, timezone
+from app.services.biomarker_service import biomarker_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,22 @@ class DeviceService:
         - Filter by is_active = true
         - Return list of available devices
         """
-        pass
+        try:
+            response = supabase_admin.table("device_types").select("*").eq("is_active", True).execute()
+            if response.error:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to fetch device types"
+                )
+            return response.data
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch device types: {str(e)}"
+            )
 
     @staticmethod
     async def connect_device(user_id: str, device_type: str, device_name: Optional[str] = None) -> Dict:
@@ -57,7 +73,84 @@ class DeviceService:
         - IMPORTANT: Call biomarker_service.simulate_device_data(user_id, device_id, device_type, days_of_history=7)
         - Return device with type information + simulation summary
         """
-        pass
+        try:
+            type_response = supabase_admin.table("device_types").select("*").eq("device_type", device_type).eq("is_active",True).single().execute()
+            if not type_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid device type"
+                )
+            device_type_info = type_response.data
+            device_response = supabase_admin.table("devices").select("*").eq("user_id", user_id).eq("device_type", device_type).single().execute()
+            now = datetime.now(timezone.utc)
+            # if device exists
+            if device_response.data:
+                device = device_response.data
+                if device["status"] == "connected":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Device of this type is already connected"
+                    )
+                else:
+                    # reactivate device
+                    update_data = {
+                        "status": "connected",
+                        "connected_at": now.isoformat(),
+                        "disconnected_at": None,
+                        "updated_at": now.isoformat()
+                    }
+                    if device_name:
+                        update_data["device_name"] = device_name
+                    update_response = supabase_admin.table("devices").update(update_data).eq("id", device["id"]).execute()
+                    if update_response.error:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to reconnect device"
+                        )
+                    device= update_response.data[0]
+            # create new device
+            else : 
+                insert_response = (
+                supabase_admin
+                .table("devices")
+                .insert({
+                    "user_id": user_id,
+                    "device_type": device_type,
+                    "device_name": device_name if device_name else device_type_info["display_name"], #CHECK THIS as device name is optional
+                    "status": "connected",
+                    "connected_at": now.isoformat(),
+                    "created_at": now.isoformat(),
+                    "updated_at": now.isoformat()
+                })
+                .execute()
+            )
+            device= insert_response.data[0]
+            simulation_summary = await biomarker_service.simulate_device_data(
+            user_id=user_id,
+            device_id=device["id"],
+            device_type=device_type,
+            days_of_history=7
+        )
+            return {
+                "device": {
+                    **device,
+                    "display_name": device_type_info["display_name"],
+                    "manufacturer": device_type_info["manufacturer"],
+                    "supported_biomarkers": device_type_info["supported_biomarkers"],
+                    "icon_url": device_type_info.get("icon_url")
+                },
+                "simulation": simulation_summary
+                    
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error connecting device: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to connect device"
+            )
+
 
     @staticmethod
     async def disconnect_device(device_id: str, user_id: str) -> Dict:
@@ -78,7 +171,49 @@ class DeviceService:
         - Set disconnected_at timestamp
         - Return updated device record
         """
-        pass
+        try:
+            device_response = supabase_admin.table("devices").select("*").eq("id", device_id).eq("user_id", user_id).single().execute()
+            if not device_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Device not found"
+                )
+            device = device_response.data
+            if device["status"] != "connected":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Device is not currently connected"
+                )
+            now = datetime.now(timezone.utc)
+            update_response = supabase_admin.table("devices").update({
+                "status": "disconnected",
+                "disconnected_at": now.isoformat(),
+                "updated_at": now.isoformat()
+            }).eq("id", device_id).execute()
+            if update_response.error:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to disconnect device"
+                )
+                
+            # returns updated device record
+            return update_response.data[0]
+            
+#             updated= update_response.data[0]
+#             return {
+#                  "message": "Device disconnected successfully",
+# +                "device_id": updated["id"],
+# +                "disconnected_at": updated.get("disconnected_at", now.isoformat())
+#             }
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error disconnecting device: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to disconnect device"
+            )
 
     @staticmethod
     async def get_user_devices(user_id: str, status: Optional[str] = None) -> List[Dict]:
@@ -98,7 +233,37 @@ class DeviceService:
         - Join with device_types to get display info
         - Return enriched device list
         """
-        pass
+        try:
+            query = supabase_admin.table("devices").select("*").eq("user_id", user_id)
+            if status:
+                query = query.eq("status", status)
+            response = query.execute()
+            if response.error:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to fetch user devices"
+                )
+            devices = response.data
+            # Enrich with device type info
+            for device in devices:
+                type_response = supabase_admin.table("device_types").select("*").eq("device_type", device["device_type"]).single().execute()
+                if type_response.data:
+                    device_type_info = type_response.data
+                    device.update({
+                        "display_name": device_type_info["display_name"],
+                        "manufacturer": device_type_info["manufacturer"],
+                        "supported_biomarkers": device_type_info["supported_biomarkers"],
+                        "icon_url": device_type_info.get("icon_url")
+                    })
+            return devices
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching user devices: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch user devices"
+            )
 
     @staticmethod
     async def get_device_by_id(device_id: str, user_id: str) -> Dict:
@@ -118,7 +283,32 @@ class DeviceService:
         - Join with device_types for display info
         - Return enriched device record
         """
-        pass
+        try:
+            device_response = supabase_admin.table("devices").select("*").eq("id", device_id).eq("user_id", user_id).single().execute()
+            if not device_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Device not found"
+                )
+            device = device_response.data
+            type_response = supabase_admin.table("device_types").select("*").eq("device_type", device["device_type"]).single().execute()
+            if type_response.data:
+                device_type_info = type_response.data
+                device.update({
+                    "display_name": device_type_info["display_name"],
+                    "manufacturer": device_type_info["manufacturer"],
+                    "supported_biomarkers": device_type_info["supported_biomarkers"],
+                    "icon_url": device_type_info.get("icon_url")
+                })
+            return device
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching device details: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch device details"
+            )
 
 
 # Create singleton instance
