@@ -92,11 +92,6 @@ async def regenerate_summary(
 # PROVIDER ENDPOINTS 
 
 def _verify_provider_patient_access(provider_id: str, patient_id: str):
-    """
-    
-    Need to put the (provider_patient_connections table) and (status == accepted) i am lowkey stuck cause i think you need a real DB query
-    """
-  
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
