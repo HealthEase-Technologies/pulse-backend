@@ -272,3 +272,4 @@ The Pulse Team
 
 # Singleton instance
 email_service = EmailService()
+#for commiting
