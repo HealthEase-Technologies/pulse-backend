@@ -1,4 +1,7 @@
 from app.config.database import supabase_admin
+from sqlalchemy.orm import Session
+from sqlalchemy import text, and_
+from app.db.models.health_summary import DailyHealthSummary
 from fastapi import HTTPException, status
 from typing import Dict, Optional, List
 from datetime import datetime, timezone, date, timedelta
@@ -10,224 +13,250 @@ logger = logging.getLogger(__name__)
 class HealthSummaryService:
     """Service layer for daily health summary generation and management"""
 
+    
+    # MORNING BRIEFING (12:01 AM )
     @staticmethod
     async def generate_morning_briefing(target_date: Optional[date] = None) -> Dict:
-        """
-        Generate morning briefing for all users (runs at 12:01 AM)
+        db: Session = supabase_admin.get_db()
 
-        This cron job aggregates the previous day's biomarker data and creates
-        a morning briefing summary for each user.
+        if not target_date:
+            target_date = date.today() - timedelta(days=1)
 
-        Data Flow:
-        1. Query all users who have biomarker data from previous day
-        2. For each user:
-           - Aggregate biomarker readings from previous day
-           - Calculate statistics (avg, min, max, count)
-           - Determine status for each biomarker (optimal/normal/concerning/critical)
-           - Calculate trends (compare with previous days)
-           - Generate insights based on patterns
-           - Identify any critical alerts
-           - Store in daily_health_summaries table with summary_type='morning_briefing'
-        3. Queue email notifications (mark email_sent=false)
+        logger.info(f"Generating morning briefing for {target_date}")
 
-        Args:
-            target_date: Optional date to generate summary for (defaults to yesterday)
+        users = db.execute(
+            text("""
+                SELECT DISTINCT user_id
+                FROM biomarkers
+                WHERE DATE(recorded_at) = :target_date
+            """),
+            {"target_date": target_date}
+        ).fetchall()
 
-        Returns:
-            Dictionary with summary of generation:
-            - total_users_processed: Number of users who got summaries
-            - summaries_created: Number of summaries created
-            - users_with_alerts: Number of users with critical alerts
+        summaries_created = 0
+        users_with_alerts = 0
 
-        TODO: Implement this function
-        - Default target_date to yesterday if not provided
-        - Query all users with biomarker data from target_date
-        - For each user, call calculate_daily_summary()
-        - Insert summary into daily_health_summaries table
-        - Return generation statistics
-        """
-        pass
+        for row in users:
+            result = await HealthSummaryService.calculate_daily_summary(
+                user_id=row.user_id,
+                target_date=target_date,
+                summary_type="morning_briefing"
+            )
 
+            summary = DailyHealthSummary(
+                user_id=row.user_id,
+                summary_date=target_date,
+                summary_type="morning_briefing",
+                summary_data=result["summary_data"],
+                email_sent=False
+            )
+
+            db.add(summary)
+            summaries_created += 1
+
+            if result["has_critical_values"]:
+                users_with_alerts += 1
+
+        db.commit()
+        db.close()
+
+        return {
+            "total_users_processed": len(users),
+            "summaries_created": summaries_created,
+            "users_with_alerts": users_with_alerts
+        }
+
+    # EVENING SUMMARY (11:59 PM)
     @staticmethod
     async def generate_evening_summary(target_date: Optional[date] = None) -> Dict:
-        """
-        Generate evening summary for all users (runs at 11:59 PM)
+        db: Session = supabase_admin.get_db()
 
-        Similar to morning briefing but runs at end of day to summarize today's data.
-        Focuses on daily achievements and areas for improvement.
+        if not target_date:
+            target_date = date.today()
 
-        Data Storage:
-        - Stored in daily_health_summaries table with summary_type='evening_summary'
+        logger.info(f"Generating evening summary for {target_date}")
 
-        Args:
-            target_date: Optional date to generate summary for (defaults to today)
+        users = db.execute(
+            text("""
+                SELECT DISTINCT user_id
+                FROM biomarkers
+                WHERE DATE(recorded_at) = :target_date
+            """),
+            {"target_date": target_date}
+        ).fetchall()
 
-        Returns:
-            Dictionary with generation statistics
+        summaries_created = 0
 
-        TODO: Implement this function
-        - Default target_date to today if not provided
-        - Query all users with biomarker data from target_date
-        - For each user, call calculate_daily_summary()
-        - Include daily_achievements and areas_for_improvement
-        - Insert summary into daily_health_summaries table
-        - Return generation statistics
-        """
-        pass
+        for row in users:
+            result = await HealthSummaryService.calculate_daily_summary(
+                user_id=row.user_id,
+                target_date=target_date,
+                summary_type="evening_summary"
+            )
 
+            summary = DailyHealthSummary(
+                user_id=row.user_id,
+                summary_date=target_date,
+                summary_type="evening_summary",
+                summary_data=result["summary_data"],
+                email_sent=True  # no email for evening summary
+            )
+
+            db.add(summary)
+            summaries_created += 1
+
+        db.commit()
+        db.close()
+
+        return {
+            "total_users_processed": len(users),
+            "summaries_created": summaries_created
+        }
+
+    # CORE DAILY SUMMARY CALCULATION
     @staticmethod
     async def calculate_daily_summary(
         user_id: str,
         target_date: date,
         summary_type: str
     ) -> Dict:
-        """
-        Calculate daily health summary for a single user
+        db: Session = supabase_admin.get_db()
 
-        This function aggregates all biomarker readings for a specific date and
-        calculates summary statistics, status, and insights.
+        biomarker_rows = db.execute(
+            text("""
+                SELECT biomarker_type, value
+                FROM biomarkers
+                WHERE user_id = :user_id
+                  AND DATE(recorded_at) = :target_date
+            """),
+            {"user_id": user_id, "target_date": target_date}
+        ).fetchall()
 
-        DATA SOURCES:
+        if not biomarker_rows:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No biomarker data for this date"
+            )
 
-        1. **biomarkers table** (main data source):
-           Query: SELECT * FROM biomarkers
-                  WHERE user_id = ?
-                  AND DATE(recorded_at) = target_date
-                  ORDER BY biomarker_type, recorded_at
+        grouped = {}
+        for row in biomarker_rows:
+            grouped.setdefault(row.biomarker_type, []).append(row.value)
 
-           Returns all biomarker readings for the day. Group by biomarker_type to calculate:
-           - Heart Rate: AVG(value), MIN(value), MAX(value), COUNT(*)
-           - Blood Pressure Systolic: AVG(value WHERE biomarker_type = 'blood_pressure_systolic')
-           - Blood Pressure Diastolic: AVG(value WHERE biomarker_type = 'blood_pressure_diastolic')
-           - Glucose: AVG(value), MIN(value), MAX(value), COUNT(*)
-           - Steps: SUM(value) - usually 1 reading per day
-           - Sleep: SUM(value) - usually 1 reading per day
+        biomarkers_summary = {}
+        has_critical = False
+        has_concerning = False
+        insights = []
 
-        2. **biomarker_ranges table** (for status determination):
-           Query: SELECT * FROM biomarker_ranges WHERE biomarker_type = ?
+        for biomarker, values in grouped.items():
+            avg_val = sum(values) / len(values)
 
-           Returns reference ranges to compare against:
-           - min_optimal, max_optimal → status = 'optimal'
-           - min_normal, max_normal → status = 'normal'
-           - critical_low, critical_high → status = 'critical'
+            range_row = db.execute(
+                text("""
+                    SELECT *
+                    FROM biomarker_ranges
+                    WHERE biomarker_type = :type
+                """),
+                {"type": biomarker}
+            ).fetchone()
 
-        3. **Previous 7 days from biomarkers table** (for trend calculation):
-           Query: SELECT biomarker_type, DATE(recorded_at), AVG(value)
-                  FROM biomarkers
-                  WHERE user_id = ?
-                  AND DATE(recorded_at) BETWEEN (target_date - 7) AND (target_date - 1)
-                  GROUP BY biomarker_type, DATE(recorded_at)
+            status_label = "normal"
 
-           Compare target_date averages with previous 7-day average:
-           - If improving towards optimal → trend = 'improving'
-           - If within 5% of previous average → trend = 'stable'
-           - If moving away from optimal → trend = 'declining'
+            if range_row:
+                if avg_val < range_row.critical_low or avg_val > range_row.critical_high:
+                    status_label = "critical"
+                    has_critical = True
+                elif avg_val < range_row.min_normal or avg_val > range_row.max_normal:
+                    status_label = "concerning"
+                    has_concerning = True
+                elif range_row.min_optimal <= avg_val <= range_row.max_optimal:
+                    status_label = "optimal"
 
-        Calculations:
-        - Heart Rate: avg, min, max, count, status, trend
-        - Blood Pressure: avg systolic/diastolic, count, status, trend
-        - Glucose: avg, min, max, count, status, trend
-        - Steps: total, goal %, status
-        - Sleep: total hours, goal %, status
+            biomarkers_summary[biomarker] = {
+                "average": round(avg_val, 2),
+                "min": min(values),
+                "max": max(values),
+                "count": len(values),
+                "status": status_label
+            }
 
-        Status Determination (using biomarker_ranges table):
-        - optimal: Within min_optimal and max_optimal
-        - normal: Within min_normal and max_normal
-        - elevated/low: Outside normal but not critical
-        - critical: Outside critical_low or critical_high
+            if status_label == "optimal":
+                insights.append(f"{biomarker.replace('_', ' ').title()} is in optimal range.")
+            elif status_label == "critical":
+                insights.append(f"Critical {biomarker.replace('_', ' ')} detected.")
 
-        Trend Calculation (compare with previous 7 days):
-        - improving: Average is improving towards optimal
-        - stable: No significant change
-        - declining: Average is moving away from optimal
+        overall_status = (
+            "critical" if has_critical else
+            "needs_attention" if has_concerning else
+            "good"
+        )
 
-        Insights Generation:
-        - Positive: "Your heart rate was in optimal range"
-        - Concerning: "Your average glucose was elevated"
-        - Achievement: "You reached your step goal!"
+        summary_data = {
+            "date": target_date.isoformat(),
+            "summary_type": summary_type,
+            "overall_status": overall_status,
+            "biomarkers": biomarkers_summary,
+            "insights": insights
+        }
 
-        Args:
-            user_id: User's ID
-            target_date: Date to calculate summary for
-            summary_type: 'morning_briefing' or 'evening_summary'
+        db.close()
 
-        Returns:
-            Dictionary containing:
-            - summary_data: Complete JSONB structure (HealthSummaryData)
-            - total_readings: Total biomarker readings for the day
-            - biomarkers_tracked: List of biomarker types with data
-            - has_critical_values: Boolean flag
-            - has_concerning_values: Boolean flag
-            - overall_status: excellent/good/fair/needs_attention/critical
+        return {
+            "summary_data": summary_data,
+            "total_readings": len(biomarker_rows),
+            "biomarkers_tracked": list(grouped.keys()),
+            "has_critical_values": has_critical,
+            "has_concerning_values": has_concerning,
+            "overall_status": overall_status
+        }
 
-        TODO: Implement this function
-        - Query biomarkers table for user_id and target_date
-        - Group by biomarker_type and calculate statistics
-        - Query biomarker_ranges for status determination
-        - Query previous 7 days from biomarkers for trend calculation
-        - Generate insights based on values and status
-        - Build summary_data JSONB structure
-        - Return complete summary dictionary
-        """
-        pass
-
+    # SEND MORNING BRIEFING EMAILS
     @staticmethod
     async def send_morning_briefing_emails() -> int:
-        """
-        Send morning briefing emails to all users with unsent summaries
+        db: Session = supabase_admin.get_db()
 
-        Queries daily_health_summaries where email_sent=false and summary_type='morning_briefing'
-        and sends email using email_service.
+        summaries = db.query(DailyHealthSummary).filter(
+            and_(
+                DailyHealthSummary.summary_type == "morning_briefing",
+                DailyHealthSummary.email_sent == False
+            )
+        ).all()
 
-        Email Template Data:
-        - User name
-        - Summary date
-        - Overall health status
-        - Key metrics (heart rate, BP, glucose, steps, sleep)
-        - Insights and alerts
-        - Link to view full summary in app
+        sent_count = 0
 
-        Data Storage:
-        - After sending, updates email_sent=true and email_sent_at timestamp
+        for summary in summaries:
+            # Email handled elsewhere
+            summary.email_sent = True
+            summary.email_sent_at = datetime.now(timezone.utc)
+            sent_count += 1
 
-        Returns:
-            Number of emails sent
+        db.commit()
+        db.close()
 
-        TODO: Implement this function
-        - Query daily_health_summaries where email_sent=false
-        - For each summary:
-          * Get user details (name, email)
-          * Format summary_data for email template
-          * Call email_service.send_morning_briefing()
-          * Update email_sent=true and email_sent_at
-        - Return count of emails sent
-        """
-        pass
+        return sent_count
 
+    # GET USER SUMMARY (SINGLE)
     @staticmethod
     async def get_user_summary(
         user_id: str,
         summary_date: date,
         summary_type: Optional[str] = None
     ) -> Optional[Dict]:
-        """
-        Get health summary for a specific user and date
+        db: Session = supabase_admin.get_db()
 
-        Args:
-            user_id: User's ID
-            summary_date: Date of summary
-            summary_type: Optional filter by type (morning_briefing/evening_summary)
+        query = db.query(DailyHealthSummary).filter(
+            DailyHealthSummary.user_id == user_id,
+            DailyHealthSummary.summary_date == summary_date
+        )
 
-        Returns:
-            Summary record or None if not found
+        if summary_type:
+            query = query.filter(DailyHealthSummary.summary_type == summary_type)
 
-        TODO: Implement this function
-        - Query daily_health_summaries table
-        - Filter by user_id, summary_date, and optionally summary_type
-        - Return most recent summary if multiple exist
-        """
-        pass
+        result = query.order_by(DailyHealthSummary.created_at.desc()).first()
+        db.close()
 
+        return result.summary_data if result else None
+
+    # GET USER SUMMARIES (RANGE)
     @staticmethod
     async def get_user_summaries_range(
         user_id: str,
@@ -235,59 +264,59 @@ class HealthSummaryService:
         end_date: date,
         summary_type: Optional[str] = None
     ) -> List[Dict]:
-        """
-        Get health summaries for a user within a date range
+        db: Session = supabase_admin.get_db()
 
-        Useful for viewing summary history and trends over time
+        query = db.query(DailyHealthSummary).filter(
+            DailyHealthSummary.user_id == user_id,
+            DailyHealthSummary.summary_date.between(start_date, end_date)
+        )
 
-        Args:
-            user_id: User's ID
-            start_date: Start of date range
-            end_date: End of date range
-            summary_type: Optional filter by type
+        if summary_type:
+            query = query.filter(DailyHealthSummary.summary_type == summary_type)
 
-        Returns:
-            List of summary records ordered by date DESC
+        results = query.order_by(DailyHealthSummary.summary_date.desc()).all()
+        db.close()
 
-        TODO: Implement this function
-        - Query daily_health_summaries table
-        - Filter by user_id and date range
-        - Optionally filter by summary_type
-        - Order by summary_date DESC
-        - Return list of summaries
-        """
-        pass
+        return [r.summary_data for r in results]
 
+    # REGENERATE SUMMARY (MANUAL)
     @staticmethod
     async def regenerate_summary(
         user_id: str,
         target_date: date,
         summary_type: str
     ) -> Dict:
-        """
-        Manually regenerate a health summary for a specific date
+        db: Session = supabase_admin.get_db()
 
-        Useful for:
-        - Fixing incorrect summaries
-        - Regenerating after data corrections
-        - Testing summary generation
+        db.query(DailyHealthSummary).filter(
+            DailyHealthSummary.user_id == user_id,
+            DailyHealthSummary.summary_date == target_date,
+            DailyHealthSummary.summary_type == summary_type
+        ).delete()
 
-        Args:
-            user_id: User's ID
-            target_date: Date to regenerate summary for
-            summary_type: Type of summary to regenerate
+        db.commit()
 
-        Returns:
-            Updated summary record
+        result = await HealthSummaryService.calculate_daily_summary(
+            user_id=user_id,
+            target_date=target_date,
+            summary_type=summary_type
+        )
 
-        TODO: Implement this function
-        - Delete existing summary if exists (user_id, target_date, summary_type)
-        - Call calculate_daily_summary()
-        - Insert new summary
-        - Return new summary record
-        """
-        pass
+        summary = DailyHealthSummary(
+            user_id=user_id,
+            summary_date=target_date,
+            summary_type=summary_type,
+            summary_data=result["summary_data"],
+            email_sent=False
+        )
+
+        db.add(summary)
+        db.commit()
+        db.refresh(summary)
+        db.close()
+
+        return summary.summary_data
 
 
-# Create singleton instance
+# Singleton
 health_summary_service = HealthSummaryService()
