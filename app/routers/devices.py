@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.auth.dependencies import get_current_patient
 from app.services.device_service import device_service
+from app.services.biomarker_service import biomarker_service
 from app.schemas.device import (
     DeviceTypeInfo,
     ConnectDeviceRequest,
@@ -220,13 +221,18 @@ async def simulate_device_data(
         )
         # get device_type from device record
         device_type = device["device_type"]
-        simulation_result = await device_service.simulate_device_data(
+        simulation_result = await biomarker_service.simulate_device_data(
             user_id=user_id,
             device_id=device_id,
             device_type=device_type,
             days_of_history=request.days_of_history
         )
-        return simulation_result
+        return {
+            "message": "Device data simulated successfully",
+            "device_id": device_id,
+            "device_type": device_type,
+            **simulation_result
+        }
     except HTTPException:
         raise
     except Exception as e:
