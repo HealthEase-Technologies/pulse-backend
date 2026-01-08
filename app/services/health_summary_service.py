@@ -1,10 +1,7 @@
 from app.config.database import supabase_admin
-from sqlalchemy.orm import Session
-from sqlalchemy import text, and_
-from app.db.models.health_summary import DailyHealthSummary
 from fastapi import HTTPException, status
 from typing import Dict, Optional, List
-from datetime import datetime, timezone, date, timedelta
+from datetime import date, timedelta, datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,250 +10,286 @@ logger = logging.getLogger(__name__)
 class HealthSummaryService:
     """Service layer for daily health summary generation and management"""
 
-    
-    # MORNING BRIEFING (12:01 AM )
+    # MORNING BRIEFING (12:01 AM)
     @staticmethod
-    async def generate_morning_briefing(target_date: Optional[date] = None) -> Dict:
-        db: Session = supabase_admin.get_db()
+    async def generate_morning_briefing(
+        target_date: Optional[date] = None
+    ) -> Dict:
+        try:
+            if not target_date:
+                target_date = date.today() - timedelta(days=1)
 
-        if not target_date:
-            target_date = date.today() - timedelta(days=1)
+            start_ts = f"{target_date}T00:00:00"
+            end_ts = f"{target_date}T23:59:59"
 
-        logger.info(f"Generating morning briefing for {target_date}")
-
-        users = db.execute(
-            text("""
-                SELECT DISTINCT user_id
-                FROM biomarkers
-                WHERE DATE(recorded_at) = :target_date
-            """),
-            {"target_date": target_date}
-        ).fetchall()
-
-        summaries_created = 0
-        users_with_alerts = 0
-
-        for row in users:
-            result = await HealthSummaryService.calculate_daily_summary(
-                user_id=row.user_id,
-                target_date=target_date,
-                summary_type="morning_briefing"
+            users_resp = (
+                supabase_admin
+                .table("biomarkers")
+                .select("user_id")
+                .gte("recorded_at", start_ts)
+                .lte("recorded_at", end_ts)
+                .execute()
             )
 
-            summary = DailyHealthSummary(
-                user_id=row.user_id,
-                summary_date=target_date,
-                summary_type="morning_briefing",
-                summary_data=result["summary_data"],
-                email_sent=False
+            user_ids = {row["user_id"] for row in users_resp.data} if users_resp.data else set()
+
+            summaries_created = 0
+            users_with_alerts = 0
+
+            for user_id in user_ids:
+                result = await HealthSummaryService.calculate_daily_summary(
+                    user_id=user_id,
+                    target_date=target_date,
+                    summary_type="morning_briefing"
+                )
+
+                supabase_admin.table("daily_health_summaries").insert({
+                    "user_id": user_id,
+                    "summary_date": target_date.isoformat(),
+                    "summary_type": "morning_briefing",
+                    "summary_data": result["summary_data"],
+                    "email_sent": False,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }).execute()
+
+                summaries_created += 1
+                if result["has_critical_values"]:
+                    users_with_alerts += 1
+
+            return {
+                "total_users_processed": len(user_ids),
+                "summaries_created": summaries_created,
+                "users_with_alerts": users_with_alerts
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate morning briefing: {str(e)}"
             )
-
-            db.add(summary)
-            summaries_created += 1
-
-            if result["has_critical_values"]:
-                users_with_alerts += 1
-
-        db.commit()
-        db.close()
-
-        return {
-            "total_users_processed": len(users),
-            "summaries_created": summaries_created,
-            "users_with_alerts": users_with_alerts
-        }
 
     # EVENING SUMMARY (11:59 PM)
     @staticmethod
-    async def generate_evening_summary(target_date: Optional[date] = None) -> Dict:
-        db: Session = supabase_admin.get_db()
+    async def generate_evening_summary(
+        target_date: Optional[date] = None
+    ) -> Dict:
+        try:
+            if not target_date:
+                target_date = date.today()
 
-        if not target_date:
-            target_date = date.today()
+            start_ts = f"{target_date}T00:00:00"
+            end_ts = f"{target_date}T23:59:59"
 
-        logger.info(f"Generating evening summary for {target_date}")
-
-        users = db.execute(
-            text("""
-                SELECT DISTINCT user_id
-                FROM biomarkers
-                WHERE DATE(recorded_at) = :target_date
-            """),
-            {"target_date": target_date}
-        ).fetchall()
-
-        summaries_created = 0
-
-        for row in users:
-            result = await HealthSummaryService.calculate_daily_summary(
-                user_id=row.user_id,
-                target_date=target_date,
-                summary_type="evening_summary"
+            users_resp = (
+                supabase_admin
+                .table("biomarkers")
+                .select("user_id")
+                .gte("recorded_at", start_ts)
+                .lte("recorded_at", end_ts)
+                .execute()
             )
 
-            summary = DailyHealthSummary(
-                user_id=row.user_id,
-                summary_date=target_date,
-                summary_type="evening_summary",
-                summary_data=result["summary_data"],
-                email_sent=True  # no email for evening summary
+            user_ids = {row["user_id"] for row in users_resp.data} if users_resp.data else set()
+            summaries_created = 0
+
+            for user_id in user_ids:
+                result = await HealthSummaryService.calculate_daily_summary(
+                    user_id=user_id,
+                    target_date=target_date,
+                    summary_type="evening_summary"
+                )
+
+                supabase_admin.table("daily_health_summaries").insert({
+                    "user_id": user_id,
+                    "summary_date": target_date.isoformat(),
+                    "summary_type": "evening_summary",
+                    "summary_data": result["summary_data"],
+                    "email_sent": True,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }).execute()
+
+                summaries_created += 1
+
+            return {
+                "total_users_processed": len(user_ids),
+                "summaries_created": summaries_created
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate evening summary: {str(e)}"
             )
 
-            db.add(summary)
-            summaries_created += 1
-
-        db.commit()
-        db.close()
-
-        return {
-            "total_users_processed": len(users),
-            "summaries_created": summaries_created
-        }
-
-    # CORE DAILY SUMMARY CALCULATION
+    # CORE DAILY SUMMARY
     @staticmethod
     async def calculate_daily_summary(
         user_id: str,
         target_date: date,
         summary_type: str
     ) -> Dict:
-        db: Session = supabase_admin.get_db()
+        try:
+            start_ts = f"{target_date}T00:00:00"
+            end_ts = f"{target_date}T23:59:59"
 
-        biomarker_rows = db.execute(
-            text("""
-                SELECT biomarker_type, value
-                FROM biomarkers
-                WHERE user_id = :user_id
-                  AND DATE(recorded_at) = :target_date
-            """),
-            {"user_id": user_id, "target_date": target_date}
-        ).fetchall()
-
-        if not biomarker_rows:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No biomarker data for this date"
+            biomarker_resp = (
+                supabase_admin
+                .table("biomarkers")
+                .select("biomarker_type,value")
+                .eq("user_id", user_id)
+                .gte("recorded_at", start_ts)
+                .lte("recorded_at", end_ts)
+                .execute()
             )
 
-        grouped = {}
-        for row in biomarker_rows:
-            grouped.setdefault(row.biomarker_type, []).append(row.value)
+            if not biomarker_resp.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No biomarker data for this date"
+                )
 
-        biomarkers_summary = {}
-        has_critical = False
-        has_concerning = False
-        insights = []
+            grouped = {}
+            for row in biomarker_resp.data:
+                grouped.setdefault(row["biomarker_type"], []).append(row["value"])
 
-        for biomarker, values in grouped.items():
-            avg_val = sum(values) / len(values)
+            biomarkers_summary = {}
+            insights = []
+            has_critical = False
+            has_concerning = False
 
-            range_row = db.execute(
-                text("""
-                    SELECT *
-                    FROM biomarker_ranges
-                    WHERE biomarker_type = :type
-                """),
-                {"type": biomarker}
-            ).fetchone()
+            for biomarker, values in grouped.items():
+                avg_val = sum(values) / len(values)
 
-            status_label = "normal"
+                range_resp = (
+                    supabase_admin
+                    .table("biomarker_ranges")
+                    .select("*")
+                    .eq("biomarker_type", biomarker)
+                    .single()
+                    .execute()
+                )
 
-            if range_row:
-                if avg_val < range_row.critical_low or avg_val > range_row.critical_high:
-                    status_label = "critical"
-                    has_critical = True
-                elif avg_val < range_row.min_normal or avg_val > range_row.max_normal:
-                    status_label = "concerning"
-                    has_concerning = True
-                elif range_row.min_optimal <= avg_val <= range_row.max_optimal:
-                    status_label = "optimal"
+                status_label = "normal"
 
-            biomarkers_summary[biomarker] = {
-                "average": round(avg_val, 2),
-                "min": min(values),
-                "max": max(values),
-                "count": len(values),
-                "status": status_label
+                if range_resp.data:
+                    r = range_resp.data
+                    if avg_val < r["critical_low"] or avg_val > r["critical_high"]:
+                        status_label = "critical"
+                        has_critical = True
+                    elif avg_val < r["min_normal"] or avg_val > r["max_normal"]:
+                        status_label = "concerning"
+                        has_concerning = True
+                    elif r["min_optimal"] <= avg_val <= r["max_optimal"]:
+                        status_label = "optimal"
+
+                biomarkers_summary[biomarker] = {
+                    "average": round(avg_val, 2),
+                    "min": min(values),
+                    "max": max(values),
+                    "count": len(values),
+                    "status": status_label
+                }
+
+                if status_label == "optimal":
+                    insights.append(f"{biomarker.replace('_', ' ').title()} is in optimal range.")
+                elif status_label == "critical":
+                    insights.append(f"Critical {biomarker.replace('_', ' ')} detected.")
+
+            overall_status = (
+                "critical" if has_critical else
+                "needs_attention" if has_concerning else
+                "good"
+            )
+
+            summary_data = {
+                "date": target_date.isoformat(),
+                "summary_type": summary_type,
+                "overall_status": overall_status,
+                "biomarkers": biomarkers_summary,
+                "insights": insights
             }
 
-            if status_label == "optimal":
-                insights.append(f"{biomarker.replace('_', ' ').title()} is in optimal range.")
-            elif status_label == "critical":
-                insights.append(f"Critical {biomarker.replace('_', ' ')} detected.")
+            return {
+                "summary_data": summary_data,
+                "total_readings": sum(len(v) for v in grouped.values()),
+                "biomarkers_tracked": list(grouped.keys()),
+                "has_critical_values": has_critical,
+                "has_concerning_values": has_concerning,
+                "overall_status": overall_status
+            }
 
-        overall_status = (
-            "critical" if has_critical else
-            "needs_attention" if has_concerning else
-            "good"
-        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to calculate daily summary: {str(e)}"
+            )
 
-        summary_data = {
-            "date": target_date.isoformat(),
-            "summary_type": summary_type,
-            "overall_status": overall_status,
-            "biomarkers": biomarkers_summary,
-            "insights": insights
-        }
-
-        db.close()
-
-        return {
-            "summary_data": summary_data,
-            "total_readings": len(biomarker_rows),
-            "biomarkers_tracked": list(grouped.keys()),
-            "has_critical_values": has_critical,
-            "has_concerning_values": has_concerning,
-            "overall_status": overall_status
-        }
-
-    # SEND MORNING BRIEFING EMAILS
+    # SEND MORNING BRIEFING EMAIL FLAGS
     @staticmethod
     async def send_morning_briefing_emails() -> int:
-        db: Session = supabase_admin.get_db()
-
-        summaries = db.query(DailyHealthSummary).filter(
-            and_(
-                DailyHealthSummary.summary_type == "morning_briefing",
-                DailyHealthSummary.email_sent == False
+        try:
+            summaries_resp = (
+                supabase_admin
+                .table("daily_health_summaries")
+                .select("id")
+                .eq("summary_type", "morning_briefing")
+                .eq("email_sent", False)
+                .execute()
             )
-        ).all()
 
-        sent_count = 0
+            sent_count = 0
 
-        for summary in summaries:
-            # Email handled elsewhere
-            summary.email_sent = True
-            summary.email_sent_at = datetime.now(timezone.utc)
-            sent_count += 1
+            for row in summaries_resp.data or []:
+                supabase_admin.table("daily_health_summaries").update({
+                    "email_sent": True,
+                    "email_sent_at": datetime.now(timezone.utc).isoformat()
+                }).eq("id", row["id"]).execute()
 
-        db.commit()
-        db.close()
+                sent_count += 1
 
-        return sent_count
+            return sent_count
 
-    # GET USER SUMMARY (SINGLE)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update email status: {str(e)}"
+            )
+
+    # GET USER SUMMARY
     @staticmethod
     async def get_user_summary(
         user_id: str,
         summary_date: date,
         summary_type: Optional[str] = None
     ) -> Optional[Dict]:
-        db: Session = supabase_admin.get_db()
+        try:
+            query = (
+                supabase_admin
+                .table("daily_health_summaries")
+                .select("summary_data")
+                .eq("user_id", user_id)
+                .eq("summary_date", summary_date.isoformat())
+            )
 
-        query = db.query(DailyHealthSummary).filter(
-            DailyHealthSummary.user_id == user_id,
-            DailyHealthSummary.summary_date == summary_date
-        )
+            if summary_type:
+                query = query.eq("summary_type", summary_type)
 
-        if summary_type:
-            query = query.filter(DailyHealthSummary.summary_type == summary_type)
+            resp = query.order("created_at", desc=True).limit(1).execute()
+            return resp.data[0]["summary_data"] if resp.data else None
 
-        result = query.order_by(DailyHealthSummary.created_at.desc()).first()
-        db.close()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to fetch user summary: {str(e)}"
+            )
 
-        return result.summary_data if result else None
-
-    # GET USER SUMMARIES (RANGE)
+    # GET USER SUMMARIES RANGE
     @staticmethod
     async def get_user_summaries_range(
         user_id: str,
@@ -264,62 +297,30 @@ class HealthSummaryService:
         end_date: date,
         summary_type: Optional[str] = None
     ) -> List[Dict]:
-        db: Session = supabase_admin.get_db()
+        try:
+            query = (
+                supabase_admin
+                .table("daily_health_summaries")
+                .select("summary_data")
+                .eq("user_id", user_id)
+                .gte("summary_date", start_date.isoformat())
+                .lte("summary_date", end_date.isoformat())
+            )
 
-        query = db.query(DailyHealthSummary).filter(
-            DailyHealthSummary.user_id == user_id,
-            DailyHealthSummary.summary_date.between(start_date, end_date)
-        )
+            if summary_type:
+                query = query.eq("summary_type", summary_type)
 
-        if summary_type:
-            query = query.filter(DailyHealthSummary.summary_type == summary_type)
+            resp = query.order("summary_date", desc=True).execute()
+            return [r["summary_data"] for r in resp.data or []]
 
-        results = query.order_by(DailyHealthSummary.summary_date.desc()).all()
-        db.close()
-
-        return [r.summary_data for r in results]
-
-    # REGENERATE SUMMARY (MANUAL)
-    @staticmethod
-    async def regenerate_summary(
-        user_id: str,
-        target_date: date,
-        summary_type: str
-    ) -> Dict:
-        db: Session = supabase_admin.get_db()
-
-        db.query(DailyHealthSummary).filter(
-            DailyHealthSummary.user_id == user_id,
-            DailyHealthSummary.summary_date == target_date,
-            DailyHealthSummary.summary_type == summary_type
-        ).delete()
-
-        db.commit()
-
-        result = await HealthSummaryService.calculate_daily_summary(
-            user_id=user_id,
-            target_date=target_date,
-            summary_type=summary_type
-        )
-
-        summary = DailyHealthSummary(
-            user_id=user_id,
-            summary_date=target_date,
-            summary_type=summary_type,
-            summary_data=result["summary_data"],
-            email_sent=False
-        )
-
-        db.add(summary)
-        db.commit()
-        db.refresh(summary)
-        db.close()
-
-        return summary.summary_data
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to fetch summaries range: {str(e)}"
+            )
 
 
-# Singleton
+# Singleton instance
 health_summary_service = HealthSummaryService()
 
-
-#for commiting
+#for commit
