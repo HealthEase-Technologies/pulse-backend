@@ -18,29 +18,12 @@ async def get_todays_summary(
     summary_type: Optional[SummaryType] = Query(None, description="Filter by summary type"),
     current_user: Dict = Depends(get_current_patient)
 ):
-    user_id = current_user["id"]
+    user_id = current_user["db_user"]["id"]
     today = date.today()
 
     summary = await health_summary_service.get_user_summary(
         user_id=user_id,
         summary_date=today,
-        summary_type=summary_type
-    )
-
-    return summary
-
-
-@router.get("/{summary_date}", response_model=Optional[DailyHealthSummaryResponse])
-async def get_summary_by_date(
-    summary_date: date,
-    summary_type: Optional[SummaryType] = Query(None, description="Filter by summary type"),
-    current_user: Dict = Depends(get_current_patient)
-):
-    user_id = current_user["id"]
-
-    summary = await health_summary_service.get_user_summary(
-        user_id=user_id,
-        summary_date=summary_date,
         summary_type=summary_type
     )
 
@@ -60,7 +43,7 @@ async def get_summaries_in_range(
             detail="start_date must be before or equal to end_date"
         )
 
-    user_id = current_user["id"]
+    user_id = current_user["db_user"]["id"]
 
     summaries = await health_summary_service.get_user_summaries_range(
         user_id=user_id,
@@ -72,13 +55,30 @@ async def get_summaries_in_range(
     return summaries
 
 
+@router.get("/{summary_date}", response_model=Optional[DailyHealthSummaryResponse])
+async def get_summary_by_date(
+    summary_date: date,
+    summary_type: Optional[SummaryType] = Query(None, description="Filter by summary type"),
+    current_user: Dict = Depends(get_current_patient)
+):
+    user_id = current_user["db_user"]["id"]
+
+    summary = await health_summary_service.get_user_summary(
+        user_id=user_id,
+        summary_date=summary_date,
+        summary_type=summary_type
+    )
+
+    return summary
+
+
 @router.post("/{summary_date}/regenerate", response_model=DailyHealthSummaryResponse)
 async def regenerate_summary(
     summary_date: date,
     summary_type: SummaryType,
     current_user: Dict = Depends(get_current_patient)
 ):
-    user_id = current_user["id"]
+    user_id = current_user["db_user"]["id"]
 
     summary = await health_summary_service.regenerate_summary(
         user_id=user_id,
@@ -89,15 +89,7 @@ async def regenerate_summary(
     return summary
 
 
-# PROVIDER ENDPOINTS 
-
-def _verify_provider_patient_access(provider_id: str, patient_id: str):
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Provider does not have access to this patient"
-        )
-
+# PROVIDER ENDPOINTS
 
 @router.get("/patient/{patient_user_id}/today", response_model=Optional[DailyHealthSummaryResponse])
 async def get_patient_todays_summary(
@@ -105,13 +97,12 @@ async def get_patient_todays_summary(
     summary_type: Optional[SummaryType] = Query(None),
     current_user: Dict = Depends(get_current_provider)
 ):
-    provider_id = current_user["id"]
-    _verify_provider_patient_access(provider_id, patient_user_id)
-
+    provider_user_id = current_user["db_user"]["id"]
     today = date.today()
 
-    summary = await health_summary_service.get_user_summary(
-        user_id=patient_user_id,
+    summary = await health_summary_service.get_patient_summary_for_provider(
+        provider_user_id=provider_user_id,
+        patient_user_id=patient_user_id,
         summary_date=today,
         summary_type=summary_type
     )
@@ -126,11 +117,11 @@ async def get_patient_summary_by_date(
     summary_type: Optional[SummaryType] = Query(None),
     current_user: Dict = Depends(get_current_provider)
 ):
-    provider_id = current_user["id"]
-    _verify_provider_patient_access(provider_id, patient_user_id)
+    provider_user_id = current_user["db_user"]["id"]
 
-    summary = await health_summary_service.get_user_summary(
-        user_id=patient_user_id,
+    summary = await health_summary_service.get_patient_summary_for_provider(
+        provider_user_id=provider_user_id,
+        patient_user_id=patient_user_id,
         summary_date=summary_date,
         summary_type=summary_type
     )
@@ -152,11 +143,11 @@ async def get_patient_summaries_in_range(
             detail="start_date must be before or equal to end_date"
         )
 
-    provider_id = current_user["id"]
-    _verify_provider_patient_access(provider_id, patient_user_id)
+    provider_user_id = current_user["db_user"]["id"]
 
-    summaries = await health_summary_service.get_user_summaries_range(
-        user_id=patient_user_id,
+    summaries = await health_summary_service.get_patient_summaries_range_for_provider(
+        provider_user_id=provider_user_id,
+        patient_user_id=patient_user_id,
         start_date=start_date,
         end_date=end_date,
         summary_type=summary_type

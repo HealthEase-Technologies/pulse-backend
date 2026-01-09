@@ -200,6 +200,24 @@ The Pulse Team
     # --------------------------------------------------
 
     @staticmethod
+    def _format_metric_value(metric_name: str, metric_data: dict) -> str:
+        """Helper to format metric value based on metric type"""
+        if metric_name == "steps":
+            return f"{metric_data.get('total', 'N/A')} steps (Goal: {metric_data.get('goal', 10000)})"
+        elif metric_name == "sleep":
+            avg = metric_data.get('avg', metric_data.get('hours', 'N/A'))
+            return f"{avg} hours"
+        elif metric_name == "blood_pressure":
+            systolic = metric_data.get('systolic_avg', 'N/A')
+            diastolic = metric_data.get('diastolic_avg', 'N/A')
+            return f"{systolic}/{diastolic} mmHg"
+        else:
+            # For heart_rate, glucose, etc. - use avg
+            avg = metric_data.get('avg', 'N/A')
+            unit = "bpm" if metric_name == "heart_rate" else "mg/dL" if metric_name == "glucose" else ""
+            return f"{avg} {unit}"
+
+    @staticmethod
     def send_morning_briefing(
         patient_email: str,
         patient_name: str,
@@ -212,7 +230,7 @@ The Pulse Team
         alerts = summary_data.get("alerts", [])
 
         metric_text = "\n".join(
-            f"- {k.replace('_', ' ').title()}: {v.get('value', 'N/A')} {v.get('unit', '')}"
+            f"- {k.replace('_', ' ').title()}: {EmailService._format_metric_value(k, v)}"
             for k, v in metrics.items()
         )
 
@@ -245,7 +263,7 @@ The Pulse Team
 
     <h3>📊 Metrics</h3>
     {''.join(
-        f"<p><strong>{k.replace('_',' ').title()}:</strong> {v.get('value','N/A')} {v.get('unit','')}</p>"
+        f"<p><strong>{k.replace('_',' ').title()}:</strong> {EmailService._format_metric_value(k, v)}</p>"
         for k, v in metrics.items()
     )}
 
