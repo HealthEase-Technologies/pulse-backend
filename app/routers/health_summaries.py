@@ -5,31 +5,29 @@ from app.schemas.health_summary import (
     DailyHealthSummaryResponse,
     SummaryType
 )
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 from datetime import date
 
 router = APIRouter(prefix="/health-summaries", tags=["health-summaries"])
 
 
-# ==================== PATIENT ENDPOINTS ====================
+#PATIENT ENDPOINTS
 
 @router.get("/today", response_model=Optional[DailyHealthSummaryResponse])
 async def get_todays_summary(
     summary_type: Optional[SummaryType] = Query(None, description="Filter by summary type"),
     current_user: Dict = Depends(get_current_patient)
 ):
-    """
-    Get today's health summary for current patient
+    user_id = current_user["id"]
+    today = date.today()
 
-    Returns most recent summary (morning briefing or evening summary)
+    summary = await health_summary_service.get_user_summary(
+        user_id=user_id,
+        summary_date=today,
+        summary_type=summary_type
+    )
 
-    TODO: Implement this endpoint
-    - Get user_id from current_user
-    - Get today's date
-    - Call health_summary_service.get_user_summary(user_id, today, summary_type)
-    - Return summary or null if not generated yet
-    """
-    pass
+    return summary
 
 
 @router.get("/{summary_date}", response_model=Optional[DailyHealthSummaryResponse])
@@ -38,19 +36,15 @@ async def get_summary_by_date(
     summary_type: Optional[SummaryType] = Query(None, description="Filter by summary type"),
     current_user: Dict = Depends(get_current_patient)
 ):
-    """
-    Get health summary for a specific date
+    user_id = current_user["id"]
 
-    Args:
-        summary_date: Date in YYYY-MM-DD format
-        summary_type: Optional filter (morning_briefing or evening_summary)
+    summary = await health_summary_service.get_user_summary(
+        user_id=user_id,
+        summary_date=summary_date,
+        summary_type=summary_type
+    )
 
-    TODO: Implement this endpoint
-    - Get user_id from current_user
-    - Call health_summary_service.get_user_summary(user_id, summary_date, summary_type)
-    - Return summary or null if doesn't exist
-    """
-    pass
+    return summary
 
 
 @router.get("/range", response_model=List[DailyHealthSummaryResponse])
@@ -60,18 +54,22 @@ async def get_summaries_in_range(
     summary_type: Optional[SummaryType] = Query(None, description="Filter by summary type"),
     current_user: Dict = Depends(get_current_patient)
 ):
-    """
-    Get health summaries for a date range
+    if start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be before or equal to end_date"
+        )
 
-    Useful for viewing summary history over weeks/months
+    user_id = current_user["id"]
 
-    TODO: Implement this endpoint
-    - Get user_id from current_user
-    - Validate start_date <= end_date
-    - Call health_summary_service.get_user_summaries_range()
-    - Return list of summaries ordered by date DESC
-    """
-    pass
+    summaries = await health_summary_service.get_user_summaries_range(
+        user_id=user_id,
+        start_date=start_date,
+        end_date=end_date,
+        summary_type=summary_type
+    )
+
+    return summaries
 
 
 @router.post("/{summary_date}/regenerate", response_model=DailyHealthSummaryResponse)
@@ -80,23 +78,26 @@ async def regenerate_summary(
     summary_type: SummaryType,
     current_user: Dict = Depends(get_current_patient)
 ):
-    """
-    Manually regenerate health summary for a specific date
+    user_id = current_user["id"]
 
-    Useful when:
-    - Biomarker data was corrected/updated
-    - Summary generation failed
-    - Testing/debugging
+    summary = await health_summary_service.regenerate_summary(
+        user_id=user_id,
+        target_date=summary_date,
+        summary_type=summary_type
+    )
 
-    TODO: Implement this endpoint
-    - Get user_id from current_user
-    - Call health_summary_service.regenerate_summary(user_id, summary_date, summary_type)
-    - Return newly generated summary
-    """
-    pass
+    return summary
 
 
-# ==================== PROVIDER ENDPOINTS ====================
+# PROVIDER ENDPOINTS 
+
+def _verify_provider_patient_access(provider_id: str, patient_id: str):
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Provider does not have access to this patient"
+        )
+
 
 @router.get("/patient/{patient_user_id}/today", response_model=Optional[DailyHealthSummaryResponse])
 async def get_patient_todays_summary(
@@ -104,19 +105,18 @@ async def get_patient_todays_summary(
     summary_type: Optional[SummaryType] = Query(None),
     current_user: Dict = Depends(get_current_provider)
 ):
-    """
-    Provider gets today's health summary for a connected patient
+    provider_id = current_user["id"]
+    _verify_provider_patient_access(provider_id, patient_user_id)
 
-    Business Rule: Provider must have accepted connection with patient
+    today = date.today()
 
-    TODO: Implement this endpoint
-    - Get provider_user_id from current_user
-    - Verify provider has accepted connection with patient
-    - Get today's date
-    - Call health_summary_service.get_user_summary(patient_user_id, today, summary_type)
-    - Return summary
-    """
-    pass
+    summary = await health_summary_service.get_user_summary(
+        user_id=patient_user_id,
+        summary_date=today,
+        summary_type=summary_type
+    )
+
+    return summary
 
 
 @router.get("/patient/{patient_user_id}/{summary_date}", response_model=Optional[DailyHealthSummaryResponse])
@@ -126,18 +126,16 @@ async def get_patient_summary_by_date(
     summary_type: Optional[SummaryType] = Query(None),
     current_user: Dict = Depends(get_current_provider)
 ):
-    """
-    Provider gets health summary for a connected patient on specific date
+    provider_id = current_user["id"]
+    _verify_provider_patient_access(provider_id, patient_user_id)
 
-    Business Rule: Provider must have accepted connection with patient
+    summary = await health_summary_service.get_user_summary(
+        user_id=patient_user_id,
+        summary_date=summary_date,
+        summary_type=summary_type
+    )
 
-    TODO: Implement this endpoint
-    - Get provider_user_id from current_user
-    - Verify provider has accepted connection with patient
-    - Call health_summary_service.get_user_summary(patient_user_id, summary_date, summary_type)
-    - Return summary
-    """
-    pass
+    return summary
 
 
 @router.get("/patient/{patient_user_id}/range", response_model=List[DailyHealthSummaryResponse])
@@ -148,16 +146,21 @@ async def get_patient_summaries_in_range(
     summary_type: Optional[SummaryType] = Query(None),
     current_user: Dict = Depends(get_current_provider)
 ):
-    """
-    Provider gets health summaries for a connected patient over a date range
+    if start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be before or equal to end_date"
+        )
 
-    Business Rule: Provider must have accepted connection with patient
+    provider_id = current_user["id"]
+    _verify_provider_patient_access(provider_id, patient_user_id)
 
-    TODO: Implement this endpoint
-    - Get provider_user_id from current_user
-    - Verify provider has accepted connection with patient
-    - Validate date range
-    - Call health_summary_service.get_user_summaries_range(patient_user_id, start_date, end_date, summary_type)
-    - Return list of summaries
-    """
-    pass
+    summaries = await health_summary_service.get_user_summaries_range(
+        user_id=patient_user_id,
+        start_date=start_date,
+        end_date=end_date,
+        summary_type=summary_type
+    )
+
+    return summaries
+#for commiting
