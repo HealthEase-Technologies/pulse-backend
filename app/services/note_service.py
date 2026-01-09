@@ -2,6 +2,7 @@ from app.config.database import supabase_admin
 from fastapi import HTTPException, status
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
+from app.utils.connection_helpers import verify_provider_patient_connection
 import logging
 
 logger = logging.getLogger(__name__)
@@ -266,15 +267,8 @@ class NoteService:
 
         Raises:
             HTTPException: If connection is not found or not accepted
-
-        TODO: Implement this function
-        - Get provider's profile_id from providers table
-        - Get patient's profile_id from patients table
-        - Query patient_provider_connections to verify accepted connection
-        - Return (provider_profile_id, patient_profile_id) if valid
-        - Raise 403 error if no accepted connection exists
         """
-        pass
+        return await verify_provider_patient_connection(provider_user_id, patient_user_id)
 
 
 # Singleton instance
