@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
-from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries
+from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.patient_service import PatientService
@@ -47,6 +47,8 @@ app.include_router(devices.router, prefix=settings.api_v1_str)
 app.include_router(biomarkers.router, prefix=settings.api_v1_str)
 # Sprint 4.3 - Health Summaries
 app.include_router(health_summaries.router, prefix=settings.api_v1_str)
+# Sprint 5.3 - HCP Notes
+app.include_router(notes.router, prefix=settings.api_v1_str)
 
 @app.get("/")
 async def root():
