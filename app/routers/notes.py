@@ -36,7 +36,7 @@ async def get_my_notes(
     - Return list of notes
     """
     # 1. Get the patient's ID from the login session (current_user)
-    patient_user_id = current_user["id"]
+    patient_user_id = current_user["db_user"]["id"]
     
     # 2. Ask the NoteService to fetch the notes from the database
     notes = await note_service.get_my_notes(
@@ -70,7 +70,7 @@ async def mark_note_as_read(
     - Return updated note
     """
     # 1. Extract the patient's user ID from the current_user dictionary
-    patient_user_id = current_user["id"]
+    patient_user_id = current_user["db_user"]["id"]
     
     # 2. Call the service method to update the database
     updated_note = await note_service.mark_note_as_read(
@@ -106,7 +106,7 @@ async def get_all_my_notes(
     - Return list of all notes by this provider
     """
     # 1. Extract the provider's user ID from the login dict
-    provider_user_id = current_user["id"]
+    provider_user_id = current_user["db_user"]["id"]
     
     # 2. Call the service to get the list of notes
     notes = await note_service.get_all_provider_notes(
@@ -142,13 +142,13 @@ current_user: Dict = Depends(get_current_provider)
     - Return created note
     """
     # 1. Get the doctor's ID from the session
-    provider_user_id = current_user["id"]
-    
+    provider_user_id = current_user["db_user"]["id"]
+
     # 2. Tell the service to create the note
     # We pull patient_id and content from the 'request' object
     new_note = await note_service.create_note(
         provider_user_id=provider_user_id,
-        patient_user_id=request.patient_user_id,
+        patient_user_id=request.patient_id,
         content=request.content
     )
     
@@ -179,8 +179,8 @@ async def get_patient_notes(
     - Return list of notes
     """
     # 1. Extract the doctor's ID from the session
-    provider_user_id = current_user["id"]
-    
+    provider_user_id = current_user["db_user"]["id"]
+
     # 2. Call the service to fetch notes for this specific patient
     # This will check for a valid connection automatically
     notes = await note_service.get_patient_notes(
@@ -211,8 +211,8 @@ async def get_note(
     - Return note
     """
     # 1. Get the doctor's ID from the session
-    provider_user_id = current_user["id"]
-    
+    provider_user_id = current_user["db_user"]["id"]
+
     # 2. Call the service to find this specific note
     # The service will check if the provider is the owner
     note = await note_service.get_note_by_id(
@@ -245,8 +245,8 @@ async def update_note(
     - Return updated note
     """
     # 1. Get the provider's ID from the session
-    provider_user_id = current_user["id"]
-    
+    provider_user_id = current_user["db_user"]["id"]
+
     # 2. Call the service to update the content
     # We pass the note_id from the URL and content from the request body
     updated_note = await note_service.update_note(
@@ -279,8 +279,8 @@ async def delete_note(
     - Return success message
     """
     # 1. Get the provider's ID from the session
-    provider_user_id = current_user["id"]
-    
+    provider_user_id = current_user["db_user"]["id"]
+
     # 2. Call the service to perform the deletion
     # The service handles the ownership check and the database operation
     result = await note_service.delete_note(

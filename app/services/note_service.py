@@ -57,7 +57,7 @@ class NoteService:
         # 2. Search the notes table for all notes matching this patient
         # We also ask to see the Provider's name so the patient knows who wrote it
         notes_query = supabase_admin.table("hcp_notes") \
-            .select("*, provider:providers(id, first_name, last_name)") \
+            .select("*, provider:providers(id, full_name)") \
             .eq("patient_id", patient_profile_id) \
             .order("created_at", desc=True) \
             .range(offset, offset + limit - 1) \
@@ -168,7 +168,7 @@ class NoteService:
         # 2. Get all notes where the 'provider_id' matches this doctor
         # We also grab the patient's name so the doctor knows who the note is for!
         notes_query = supabase_admin.table("hcp_notes") \
-            .select("*, patient:patients(id, first_name, last_name)") \
+            .select("*, patient:patients(id, full_name)") \
             .eq("provider_id", provider_profile_id) \
             .order("created_at", desc=True) \
             .range(offset, offset + limit - 1) \
@@ -326,7 +326,7 @@ class NoteService:
         # 2. Look for the specific note, but ONLY if the provider_id matches
         # This prevents Doctor A from snooping on Doctor B's notes
         result = supabase_admin.table("hcp_notes") \
-            .select("*, patient:patients(id, first_name, last_name)") \
+            .select("*, patient:patients(id, full_name)") \
             .eq("id", note_id) \
             .eq("provider_id", provider_profile_id) \
             .single() \
