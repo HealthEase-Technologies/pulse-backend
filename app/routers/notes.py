@@ -35,7 +35,18 @@ async def get_my_notes(
     - Call note_service.get_my_notes()
     - Return list of notes
     """
-    pass
+    # 1. Get the patient's ID from the login session (current_user)
+    patient_user_id = current_user["id"]
+    
+    # 2. Ask the NoteService to fetch the notes from the database
+    notes = await note_service.get_my_notes(
+        patient_user_id=patient_user_id,
+        limit=limit,
+        offset=offset
+    )
+    
+    # 3. Send the notes back to the patient's screen
+    return notes
 
 
 @router.patch("/{note_id}/mark-read", response_model=NoteResponse)
@@ -58,7 +69,17 @@ async def mark_note_as_read(
     - Call note_service.mark_note_as_read()
     - Return updated note
     """
-    pass
+    # 1. Extract the patient's user ID from the current_user dictionary
+    patient_user_id = current_user["id"]
+    
+    # 2. Call the service method to update the database
+    updated_note = await note_service.mark_note_as_read(
+        patient_user_id=patient_user_id,
+        note_id=note_id
+    )
+    
+    # 3. Return the updated note record
+    return updated_note
 
 
 # ==================== HCP NOTES ENDPOINTS ====================
@@ -84,15 +105,27 @@ async def get_all_my_notes(
     - Call note_service.get_all_provider_notes()
     - Return list of all notes by this provider
     """
-    pass
+    # 1. Extract the provider's user ID from the login dict
+    provider_user_id = current_user["id"]
+    
+    # 2. Call the service to get the list of notes
+    notes = await note_service.get_all_provider_notes(
+        provider_user_id=provider_user_id,
+        limit=limit,
+        offset=offset
+    )
+    
+    # 3. Return the list of notes
+    return notes
 
 
 @router.post("/", response_model=NoteResponse)
 async def create_note(
     request: NoteCreate,
-    current_user: Dict = Depends(get_current_provider)
+current_user: Dict = Depends(get_current_provider)  
 ):
     """
+
     Create a new note for a patient
 
     Business Rules:
@@ -108,7 +141,19 @@ async def create_note(
     - Call note_service.create_note()
     - Return created note
     """
-    pass
+    # 1. Get the doctor's ID from the session
+    provider_user_id = current_user["id"]
+    
+    # 2. Tell the service to create the note
+    # We pull patient_id and content from the 'request' object
+    new_note = await note_service.create_note(
+        provider_user_id=provider_user_id,
+        patient_user_id=request.patient_user_id,
+        content=request.content
+    )
+    
+    # 3. Return the newly created note
+    return new_note
 
 
 @router.get("/patient/{patient_user_id}", response_model=List[NoteResponse])
@@ -133,7 +178,20 @@ async def get_patient_notes(
     - Call note_service.get_patient_notes()
     - Return list of notes
     """
-    pass
+    # 1. Extract the doctor's ID from the session
+    provider_user_id = current_user["id"]
+    
+    # 2. Call the service to fetch notes for this specific patient
+    # This will check for a valid connection automatically
+    notes = await note_service.get_patient_notes(
+        provider_user_id=provider_user_id,
+        patient_user_id=patient_user_id,
+        limit=limit,
+        offset=offset
+    )
+    
+    # 3. Return the notes to the provider
+    return notes
 
 
 @router.get("/{note_id}", response_model=NoteResponse)
@@ -152,7 +210,18 @@ async def get_note(
     - Call note_service.get_note_by_id()
     - Return note
     """
-    pass
+    # 1. Get the doctor's ID from the session
+    provider_user_id = current_user["id"]
+    
+    # 2. Call the service to find this specific note
+    # The service will check if the provider is the owner
+    note = await note_service.get_note_by_id(
+        provider_user_id=provider_user_id,
+        note_id=note_id
+    )
+    
+    # 3. Return the note details
+    return note
 
 
 @router.put("/{note_id}", response_model=NoteResponse)
@@ -175,7 +244,19 @@ async def update_note(
     - Call note_service.update_note()
     - Return updated note
     """
-    pass
+    # 1. Get the provider's ID from the session
+    provider_user_id = current_user["id"]
+    
+    # 2. Call the service to update the content
+    # We pass the note_id from the URL and content from the request body
+    updated_note = await note_service.update_note(
+        provider_user_id=provider_user_id,
+        note_id=note_id,
+        content=request.content
+    )
+    
+    # 3. Return the modified note
+    return updated_note
 
 
 @router.delete("/{note_id}")
@@ -197,4 +278,15 @@ async def delete_note(
     - Call note_service.delete_note()
     - Return success message
     """
-    pass
+    # 1. Get the provider's ID from the session
+    provider_user_id = current_user["id"]
+    
+    # 2. Call the service to perform the deletion
+    # The service handles the ownership check and the database operation
+    result = await note_service.delete_note(
+        provider_user_id=provider_user_id,
+        note_id=note_id
+    )
+    
+    # 3. Return the success message (e.g., {"message": "Note deleted successfully"})
+    return result
