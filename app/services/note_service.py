@@ -40,7 +40,30 @@ class NoteService:
         - Apply limit and offset for pagination
         - Return list of notes
         """
-        pass
+        patient_data = supabase_admin.table("patients") \
+            .select("id") \
+            .eq("user_id", patient_user_id) \
+            .single() \
+            .execute()
+
+        if not patient_data.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Patient profile not found"
+            )
+        
+        patient_profile_id = patient_data.data["id"]
+
+        # 2. Search the notes table for all notes matching this patient
+        # We also ask to see the Provider's name so the patient knows who wrote it
+        notes_query = supabase_admin.table("hcp_notes") \
+            .select("*, provider:providers(id, full_name)") \
+            .eq("patient_id", patient_profile_id) \
+            .order("created_at", desc=True) \
+            .range(offset, offset + limit - 1) \
+            .execute()
+
+        return notes_query.data
 
     @staticmethod
     async def mark_note_as_read(
@@ -67,7 +90,39 @@ class NoteService:
         - Update note with is_read=True and read_at=current timestamp
         - Return updated note record
         """
-        pass
+        # 1. Get patient's internal profile_id (The "ID Badge")
+        patient_data = supabase_admin.table("patients") \
+            .select("id") \
+            .eq("user_id", patient_user_id) \
+            .single() \
+            .execute()
+
+        if not patient_data.data:
+            raise HTTPException(status_code=404, detail="Patient profile not found")
+        
+        patient_profile_id = patient_data.data["id"]
+
+        # 2. Update the note, but ONLY if it belongs to this patient
+        # We use .eq("id", note_id) AND .eq("patient_id", patient_profile_id) for safety
+        update_data = {
+            "is_read": True,
+            "read_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        result = supabase_admin.table("hcp_notes") \
+            .update(update_data) \
+            .eq("id", note_id) \
+            .eq("patient_id", patient_profile_id) \
+            .execute()
+
+        # 3. If nothing happened (data is empty), it means the note wasn't theirs
+        if not result.data:
+            raise HTTPException(
+                status_code=404, 
+                detail="Note not found or access denied"
+            )
+
+        return result.data[0]
 
     @staticmethod
     async def get_all_provider_notes(
@@ -98,7 +153,28 @@ class NoteService:
         - Apply limit and offset for pagination
         - Return list of notes
         """
-        pass
+        # 1. Find the Provider's internal ID (Their "Doctor Badge")
+        provider_data = supabase_admin.table("providers") \
+            .select("id") \
+            .eq("user_id", provider_user_id) \
+            .single() \
+            .execute()
+
+        if not provider_data.data:
+            raise HTTPException(status_code=404, detail="Provider profile not found")
+        
+        provider_profile_id = provider_data.data["id"]
+
+        # 2. Get all notes where the 'provider_id' matches this doctor
+        # We also grab the patient's name so the doctor knows who the note is for!
+        notes_query = supabase_admin.table("hcp_notes") \
+            .select("*, patient:patients(id, full_name)") \
+            .eq("provider_id", provider_profile_id) \
+            .order("created_at", desc=True) \
+            .range(offset, offset + limit - 1) \
+            .execute()
+
+        return notes_query.data
 
     @staticmethod
     async def create_note(
@@ -129,7 +205,35 @@ class NoteService:
         - Insert note into hcp_notes table with provider_id, patient_id, content
         - Return created note record
         """
-        pass
+        # 1. Validation: Make sure the note isn't empty
+        if not content or not content.strip():
+            raise HTTPException(
+                status_code=400, 
+                detail="Note content cannot be empty"
+            )
+
+        # 2. Use the Helper to get both Profile IDs and check their connection
+        # This one line does the "Gatekeeping" for you!
+        provider_profile_id, patient_profile_id = await NoteService._verify_provider_patient_connection(
+            provider_user_id, patient_user_id
+        )
+
+        # 3. Create the note record
+        note_data = {
+            "provider_id": provider_profile_id,
+            "patient_id": patient_profile_id,
+            "content": content,
+            "is_read": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # 4. Save it to the database
+        result = supabase_admin.table("hcp_notes").insert(note_data).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create note")
+
+        return result.data[0]
 
     @staticmethod
     async def get_patient_notes(
@@ -164,7 +268,23 @@ class NoteService:
         - Apply limit and offset for pagination
         - Return list of notes
         """
-        pass
+        # 1. Verification: Use the helper to check the connection and get IDs
+        # This ensures the doctor and patient are "linked"
+        provider_profile_id, patient_profile_id = await NoteService._verify_provider_patient_connection(
+            provider_user_id, patient_user_id
+        )
+
+        # 2. Search for notes that match BOTH the doctor and the patient
+        notes_query = supabase_admin.table("hcp_notes") \
+            .select("*") \
+            .eq("patient_id", patient_profile_id) \
+            .eq("provider_id", provider_profile_id) \
+            .order("created_at", desc=True) \
+            .range(offset, offset + limit - 1) \
+            .execute()
+
+        # 3. Hand back the list of notes
+        return notes_query.data
 
     @staticmethod
     async def get_note_by_id(
@@ -191,7 +311,35 @@ class NoteService:
         - Verify the note belongs to this provider (provider_id matches)
         - Return note record or raise 404 if not found
         """
-        pass
+        # 1. Get the Doctor's internal ID
+        provider_data = supabase_admin.table("providers") \
+            .select("id") \
+            .eq("user_id", provider_user_id) \
+            .single() \
+            .execute()
+
+        if not provider_data.data:
+            raise HTTPException(status_code=404, detail="Provider profile not found")
+        
+        provider_profile_id = provider_data.data["id"]
+
+        # 2. Look for the specific note, but ONLY if the provider_id matches
+        # This prevents Doctor A from snooping on Doctor B's notes
+        result = supabase_admin.table("hcp_notes") \
+            .select("*, patient:patients(id, full_name)") \
+            .eq("id", note_id) \
+            .eq("provider_id", provider_profile_id) \
+            .single() \
+            .execute()
+
+        # 3. Check if we actually found it
+        if not result.data:
+            raise HTTPException(
+                status_code=404, 
+                detail="Note not found or you do not have permission to view it"
+            )
+
+        return result.data
 
     @staticmethod
     async def update_note(
@@ -221,7 +369,47 @@ class NoteService:
         - Update note content and updated_at timestamp
         - Return updated note record
         """
-        pass
+        # 1. Validation: Make sure they didn't send an empty note
+        if not content or not content.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Note content cannot be empty"
+            )
+
+        # 2. Get the Provider's internal ID
+        provider_data = supabase_admin.table("providers") \
+            .select("id") \
+            .eq("user_id", provider_user_id) \
+            .single() \
+            .execute()
+
+        if not provider_data.data:
+            raise HTTPException(status_code=404, detail="Provider profile not found")
+        
+        provider_profile_id = provider_data.data["id"]
+
+        # 3. Prepare the update data with a new "Last Updated" timestamp
+        update_data = {
+            "content": content,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # 4. Perform the update
+        # We search by BOTH the note ID and the Provider ID to ensure ownership
+        result = supabase_admin.table("hcp_notes") \
+            .update(update_data) \
+            .eq("id", note_id) \
+            .eq("provider_id", provider_profile_id) \
+            .execute()
+
+        # 5. If nothing was updated, either the ID is wrong or they don't own it
+        if not result.data:
+            raise HTTPException(
+                status_code=404, 
+                detail="Note not found or you do not have permission to edit it"
+            )
+
+        return result.data[0]
 
     @staticmethod
     async def delete_note(
@@ -248,7 +436,35 @@ class NoteService:
         - Delete note from hcp_notes table
         - Return success message
         """
-        pass
+        # 1. Get the Provider's internal ID
+        provider_data = supabase_admin.table("providers") \
+            .select("id") \
+            .eq("user_id", provider_user_id) \
+            .single() \
+            .execute()
+
+        if not provider_data.data:
+            raise HTTPException(status_code=404, detail="Provider profile not found")
+        
+        provider_profile_id = provider_data.data["id"]
+
+        # 2. Try to delete the note
+        # We add .eq("provider_id", provider_profile_id) so they can't delete other people's notes!
+        result = supabase_admin.table("hcp_notes") \
+            .delete() \
+            .eq("id", note_id) \
+            .eq("provider_id", provider_profile_id) \
+            .execute()
+
+        # 3. If the database didn't find a note that matched both IDs, nothing gets deleted
+        if not result.data:
+            raise HTTPException(
+                status_code=404, 
+                detail="Note not found or you do not have permission to delete it"
+            )
+
+        # 4. Return a success message
+        return {"message": "Note deleted successfully", "note_id": note_id}
 
     @staticmethod
     async def _verify_provider_patient_connection(
