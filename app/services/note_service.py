@@ -113,10 +113,18 @@ class NoteService:
             .update(update_data) \
             .eq("id", note_id) \
             .eq("patient_id", patient_profile_id) \
-            .select("*, provider:providers(id, full_name)") \
             .execute()
 
-        # 3. If nothing happened (data is empty), it means the note wasn't theirs
+        # 3. Fetch the updated note with provider info
+        if result.data:
+            note = supabase_admin.table("hcp_notes") \
+                .select("*, provider:providers(id, full_name)") \
+                .eq("id", note_id) \
+                .single() \
+                .execute()
+            result.data = [note.data] if note.data else []
+
+        # 4. If nothing happened (data is empty), it means the note wasn't theirs
         if not result.data:
             raise HTTPException(
                 status_code=404,
@@ -404,10 +412,18 @@ class NoteService:
             .update(update_data) \
             .eq("id", note_id) \
             .eq("provider_id", provider_profile_id) \
-            .select("*, patient:patients(id, full_name)") \
             .execute()
 
-        # 5. If nothing was updated, either the ID is wrong or they don't own it
+        # 5. Fetch the updated note with patient info
+        if result.data:
+            note = supabase_admin.table("hcp_notes") \
+                .select("*, patient:patients(id, full_name)") \
+                .eq("id", note_id) \
+                .single() \
+                .execute()
+            result.data = [note.data] if note.data else []
+
+        # 6. If nothing was updated, either the ID is wrong or they don't own it
         if not result.data:
             raise HTTPException(
                 status_code=404,
