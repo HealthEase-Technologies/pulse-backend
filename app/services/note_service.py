@@ -239,13 +239,20 @@ class NoteService:
         # 4. Save it to the database
         result = supabase_admin.table("hcp_notes") \
             .insert(note_data) \
-            .select("*, provider:providers(id, full_name), patient:patients(id, full_name)") \
             .execute()
 
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create note")
 
-        return result.data[0]
+        # 5. Fetch the created note with provider and patient info
+        note_id = result.data[0]["id"]
+        note = supabase_admin.table("hcp_notes") \
+            .select("*, provider:providers(id, full_name), patient:patients(id, full_name)") \
+            .eq("id", note_id) \
+            .single() \
+            .execute()
+
+        return note.data if note.data else result.data[0]
 
     @staticmethod
     async def get_patient_notes(
