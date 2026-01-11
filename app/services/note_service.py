@@ -113,12 +113,13 @@ class NoteService:
             .update(update_data) \
             .eq("id", note_id) \
             .eq("patient_id", patient_profile_id) \
+            .select("*, provider:providers(id, full_name)") \
             .execute()
 
         # 3. If nothing happened (data is empty), it means the note wasn't theirs
         if not result.data:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Note not found or access denied"
             )
 
@@ -228,7 +229,10 @@ class NoteService:
         }
 
         # 4. Save it to the database
-        result = supabase_admin.table("hcp_notes").insert(note_data).execute()
+        result = supabase_admin.table("hcp_notes") \
+            .insert(note_data) \
+            .select("*, provider:providers(id, full_name), patient:patients(id, full_name)") \
+            .execute()
 
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create note")
@@ -276,7 +280,7 @@ class NoteService:
 
         # 2. Search for notes that match BOTH the doctor and the patient
         notes_query = supabase_admin.table("hcp_notes") \
-            .select("*") \
+            .select("*, patient:patients(id, full_name)") \
             .eq("patient_id", patient_profile_id) \
             .eq("provider_id", provider_profile_id) \
             .order("created_at", desc=True) \
@@ -400,12 +404,13 @@ class NoteService:
             .update(update_data) \
             .eq("id", note_id) \
             .eq("provider_id", provider_profile_id) \
+            .select("*, patient:patients(id, full_name)") \
             .execute()
 
         # 5. If nothing was updated, either the ID is wrong or they don't own it
         if not result.data:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Note not found or you do not have permission to edit it"
             )
 
