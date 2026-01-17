@@ -27,6 +27,9 @@ requests==2.31.0
 # validation
 email-validator==2.1.0
 
+# ai / recommendations
+google-genai>=1.0.0
+
 # development & testing
 pytest==7.4.3
 pytest-asyncio==0.21.1

@@ -1,5 +1,6 @@
 from app.config.database import supabase_admin
 from app.services.email_service import email_service
+from app.services.recommendations_service import recommendations_service
 from fastapi import HTTPException, status
 from typing import Dict, Optional, List
 from datetime import date, timedelta, datetime, timezone
@@ -280,7 +281,8 @@ class HealthSummaryService:
     @staticmethod
     async def send_morning_briefing_emails() -> int:
         """
-        Send morning briefing emails to users with pending summaries
+        Send morning briefing emails to users with pending summaries.
+        Includes AI recommendations if available.
 
         Returns:
             Number of emails successfully sent
@@ -309,11 +311,23 @@ class HealthSummaryService:
                         user_email = user_resp.data["email"]
                         user_name = user_resp.data.get("username", "User")
 
-                        # Send the morning briefing email
+                        # Fetch AI recommendations for this user (top 3)
+                        user_recommendations = []
+                        try:
+                            user_recommendations = await recommendations_service.get_recommendations_for_email(
+                                user_id=row["user_id"],
+                                limit=3
+                            ) or []
+                        except Exception as rec_error:
+                            logger.warning(f"Could not fetch recommendations for {row['user_id']}: {rec_error}")
+                            user_recommendations = []
+
+                        # Send the morning briefing email with recommendations
                         email_sent = email_service.send_morning_briefing(
                             patient_email=user_email,
                             patient_name=user_name,
-                            summary_data=row["summary_data"]
+                            summary_data=row["summary_data"],
+                            recommendations=user_recommendations
                         )
 
                         if email_sent:
@@ -324,7 +338,7 @@ class HealthSummaryService:
                             }).eq("id", row["id"]).execute()
 
                             sent_count += 1
-                            logger.info(f"Morning briefing email sent to {user_email}")
+                            logger.info(f"Morning briefing email sent to {user_email} (with {len(user_recommendations)} recommendations)")
                         else:
                             logger.warning(f"Failed to send morning briefing to {user_email}")
                     else:
