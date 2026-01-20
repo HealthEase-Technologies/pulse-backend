@@ -103,8 +103,51 @@ class RecommendationsService:
         # 3. Call gemini_service.generate_health_recommendations(health_context)
         # 4. Store recommendations in database using _store_recommendations()
         # 5. Return the generated recommendations
-        pass
+        try:
+            # if force_regenerate is False, check for existing active recommendations
+             # 1️⃣ Check for existing active recommendations (if not forcing regeneration)
+            if not force_regenerate:
+                existing_response = (
+                    supabase_admin
+                    .table("ai_recommendations")
+                    .select("*")
+                    .eq("user_id", user_id)
+                    .eq("status", "active")
+                    .execute()
+                )
 
+                if existing_response.error:
+                    raise Exception(existing_response.error)
+
+                if existing_response.data and len(existing_response.data) > 0:
+                    return existing_response.data
+
+            # 2️⃣ Build health context
+            health_context = await RecommendationsService._build_health_context(user_id)
+
+            # 3️⃣ Generate recommendations via Gemini
+            recommendations = await gemini_service.generate_health_recommendations(
+                health_context,
+                categories
+            )
+            # 4️⃣ Store recommendations
+            stored_recommendations = await RecommendationsService._store_recommendations(
+                user_id,
+                recommendations,
+                health_context
+            )
+
+            # 5️⃣ Return response
+            return stored_recommendations
+
+        except Exception as e:
+            logger.error(f"Error generating recommendations for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate recommendations"
+            )
+
+                        
     @staticmethod
     async def generate_daily_recommendations() -> Dict:
         """
@@ -124,7 +167,46 @@ class RecommendationsService:
         #             WHERE summary_date = (CURRENT_DATE - 1)
         # 2. For each user, call generate_recommendations_for_user()
         # 3. Log results and return summary
-        pass
+        try:
+            # 1️⃣ Fetch users with health summaries from yesterday
+            yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+            users_response = (
+                supabase_admin
+                .table("daily_health_summaries")
+                .select("user_id", distinct=True)
+                .eq("summary_date", yesterday.isoformat())
+                .execute()
+            )
+
+            if users_response.error:
+                raise Exception(users_response.error)
+
+            user_ids = [record["user_id"] for record in users_response.data]
+
+            total_users_processed = 0
+            recommendations_generated = 0
+
+            # 2️⃣ Generate recommendations for each user
+            for user_id in user_ids:
+                recs = await RecommendationsService.generate_recommendations_for_user(
+                    user_id,
+                    force_regenerate=False
+                )
+                if recs:
+                    recommendations_generated += len(recs)
+                total_users_processed += 1
+
+            # 3️⃣ Return summary
+            return {
+                "total_users_processed": total_users_processed,
+                "recommendations_generated": recommendations_generated
+            }
+        except Exception as e:
+            logger.error(f"Error generating daily recommendations: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate daily recommendations"
+            )
 
     # =========================================================================
     # GET RECOMMENDATIONS
@@ -160,7 +242,47 @@ class RecommendationsService:
         # 3. Optionally filter by category column
         # 4. Order by priority (urgent first, then high, medium, low) and created_at desc
         # 5. Return list of recommendations
-        pass
+        try:
+            query = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("user_id", user_id)
+                .in_("status", ["active", "in_progress"])
+                .or_("valid_until.gt." + datetime.now(timezone.utc).isoformat() + ",valid_until.is.null")
+            )
+
+            if category:
+                query = query.eq("category", category)
+
+            response = query.order("created_at", ascending=False).execute()
+            from datetime import datetime
+
+            priority_order = {
+                "urgent": 0,
+                "high": 1,
+                "medium": 2,
+                "low": 3
+            }
+
+            sorted_data = sorted(
+                response.data,
+                key=lambda x: (
+                    priority_order.get(x.get("priority"), 3),  # priority ASC
+                    -datetime.fromisoformat(x["created_at"]).timestamp()  # created_at DESC
+                )
+            )
+
+            return sorted_data
+        except Exception as e:  
+            logger.error(f"Error fetching active recommendations for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch active recommendations"
+            )
+            
+
+        
 
     @staticmethod
     async def get_recommendation_history(
@@ -199,7 +321,36 @@ class RecommendationsService:
         # 4. Apply pagination (limit, offset)
         # 5. Get total count for pagination
         # 6. Return recommendations and total_count
-        pass
+        try:
+            query = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*", count="exact")
+                .eq("user_id", user_id)
+            )
+
+            if start_date:
+                query = query.gte("created_at", start_date.isoformat())
+            if end_date:
+                query = query.lte("created_at", end_date.isoformat())
+
+            query = query.order("created_at", ascending=False).limit(limit).offset(offset)
+
+            response = query.execute()
+
+            if response.error:
+                raise Exception(response.error)
+
+            return {
+                "recommendations": response.data,
+                "total_count": response.count or 0
+            }
+        except Exception as e:
+            logger.error(f"Error fetching recommendation history for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch recommendation history"
+            )
 
     @staticmethod
     async def get_recommendation_by_id(
@@ -225,7 +376,29 @@ class RecommendationsService:
         # 1. Query ai_recommendations table by id column
         # 2. Verify user_id matches
         # 3. Return recommendation or None
-        pass
+        try:
+            response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+
+            if response.error:
+                if "No rows found" in str(response.error):
+                    return None
+                raise Exception(response.error)
+
+            return response.data
+        except Exception as e:
+            logger.error(f"Error fetching recommendation {recommendation_id} for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch recommendation"
+            )
 
     # =========================================================================
     # UPDATE RECOMMENDATIONS
@@ -267,7 +440,47 @@ class RecommendationsService:
         # 3. If feedback is 'implemented', update status column to 'completed'
         # 4. Update updated_at timestamp
         # 5. Return updated recommendation
-        pass
+        try:
+            query= supabase_admin.table("ai_recommendations").select("*").eq("id", recommendation_id).eq("user_id", user_id).single()
+            existing_response = query.execute()
+            if existing_response.error:
+                raise Exception(existing_response.error)
+            if not existing_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Recommendation not found"
+                )
+            
+            update_data = {
+                "user_feedback": feedback,
+                "feedback_notes": notes,
+                "difficulty_experienced": difficulty_experienced,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+
+            if feedback == "implemented":
+                update_data["status"] = "completed"
+
+            response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .update(update_data)
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+
+            if response.error:
+                raise Exception(response.error)
+
+            return response.data
+        except Exception as e:
+            logger.error(f"Error submitting feedback for recommendation {recommendation_id} by user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to submit feedback"
+            )
 
     @staticmethod
     async def dismiss_recommendation(
@@ -295,7 +508,40 @@ class RecommendationsService:
         # 2. Update status column to 'dismissed'
         # 3. Update updated_at timestamp
         # 4. Return updated recommendation
-        pass
+        try:
+            query= supabase_admin.table("ai_recommendations").select("*").eq("id", recommendation_id).eq("user_id", user_id).single()
+            existing_response = query.execute()
+            if existing_response.error:
+                raise Exception(existing_response.error)
+            if not existing_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Recommendation not found"
+                )
+
+            response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .update({
+                    "status": "dismissed",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+
+            if response.error:
+                raise Exception(response.error)
+
+            return response.data
+        except Exception as e:
+            logger.error(f"Error dismissing recommendation {recommendation_id} by user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to dismiss recommendation"
+            )
 
     # =========================================================================
     # PROVIDER ACCESS
@@ -331,7 +577,40 @@ class RecommendationsService:
         # 2. Query ai_recommendations for patient_user_id
         # 3. Apply status filter if provided
         # 4. Return recommendations list
-        pass
+        try:
+            # 1️⃣ Verify connection
+            await RecommendationsService._verify_provider_patient_connection(
+                provider_user_id,
+                patient_user_id
+            )
+
+            # 2️⃣ Query recommendations
+            query = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("user_id", patient_user_id)
+            )
+
+            if status_filter:
+                query = query.eq("status", status_filter)
+
+            query = query.order("created_at", ascending=False)
+
+            response = query.execute()
+
+            if response.error:
+                raise Exception(response.error)
+
+            return response.data
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching recommendations for patient {patient_user_id} by provider {provider_user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch patient recommendations"
+            )
 
     # =========================================================================
     # HELPER METHODS
@@ -369,7 +648,94 @@ class RecommendationsService:
         #      FROM goal_completions WHERE user_id = ? AND completion_date >= (NOW() - 7 days)
         # 5. Calculate trends for each biomarker (improving, stable, declining)
         # 6. Return structured health context dict
-        pass
+        try:
+            health_context = {}
+
+            # 1️⃣ Fetch patient profile
+            profile_response = (
+                supabase_admin
+                .table("patients")
+                .select("health_goals, health_restrictions, date_of_birth, height_cm, weight_kg")
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+
+            if profile_response.error:
+                raise Exception(profile_response.error)
+
+            health_context["patient_profile"] = profile_response.data
+
+            # 2️⃣ Fetch recent biomarkers
+            seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+            biomarkers_response = (
+                supabase_admin
+                .table("biomarkers")
+                .select("biomarker_type, value, recorded_at")
+                .eq("user_id", user_id)
+                .gte("recorded_at", seven_days_ago)
+                .execute()
+            )
+
+            if biomarkers_response.error:
+                raise Exception(biomarkers_response.error)
+
+            health_context["recent_biomarkers"] = biomarkers_response.data
+
+            # 3️⃣ Fetch latest health summary
+            summary_response = (
+                supabase_admin
+                .table("daily_health_summaries")
+                .select("summary_data, overall_status")
+                .eq("user_id", user_id)
+                .order("summary_date", ascending=False)
+                .limit(1)
+                .single()
+                .execute()
+            )
+
+            if summary_response.error:
+                raise Exception(summary_response.error)
+
+            health_context["latest_health_summary"] = summary_response.data
+
+            # 4️⃣ Calculate goal completion rate
+            completion_response = (
+                supabase_admin
+                .table("goal_completions")
+                .select("status", count="exact")
+                .eq("user_id", user_id)
+                .gte("completion_date", seven_days_ago)
+                .execute()
+            )
+
+            if completion_response.error:
+                raise Exception(completion_response.error)
+
+            total_goals = completion_response.count or 0
+            completed_goals = sum(1 for record in completion_response.data if record["status"] == "completed")
+            completion_rate = (completed_goals / total_goals) if total_goals > 0 else 0.0
+
+            health_context["goal_completion_rate"] = completion_rate
+            
+            # TODO 
+            #DO THIS PART !!!!!
+
+            # 5️⃣ Calculate trends for each biomarker (placeholder logic)
+            trends = {}
+            for biomarker in health_context["recent_biomarkers"]:
+                biomarker_type = biomarker["biomarker_type"]
+                # Placeholder: In real implementation, analyze historical data for trend
+                trends[biomarker_type] = "stable"  # or "improving", "declining"
+            
+            health_context["biomarker_trends"] = trends
+            return health_context
+        except Exception as e:
+            logger.error(f"Error building health context for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to build health context"
+            )
 
     @staticmethod
     async def _store_recommendations(
@@ -474,7 +840,74 @@ class RecommendationsService:
         #    - SELECT status FROM patient_provider_connections
         #      WHERE provider_id = ? AND patient_id = ? AND status = 'accepted'
         # 4. Raise 403 if no accepted connection found
-        pass
+        try:
+            # Get provider profile ID
+            provider_response = (
+                supabase_admin
+                .table("providers")
+                .select("id")
+                .eq("user_id", provider_user_id)
+                .single()
+                .execute()
+            )
+
+            if provider_response.error:
+                raise Exception(provider_response.error)
+
+            if not provider_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Provider profile not found"
+                )
+
+            provider_id = provider_response.data["id"]
+
+            # Get patient profile ID
+            patient_response = (
+                supabase_admin
+                .table("patients")
+                .select("id")
+                .eq("user_id", patient_user_id)
+                .single()
+                .execute()
+            )
+
+            if patient_response.error:
+                raise Exception(patient_response.error)
+
+            if not patient_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Patient profile not found"
+                )
+
+            patient_id = patient_response.data["id"]
+
+            # Check connection status
+            connection_response = (
+                supabase_admin
+                .table("patient_provider_connections")
+                .select("status")
+                .eq("provider_id", provider_id)
+                .eq("patient_id", patient_id)
+                .eq("status", "accepted")
+                .single()
+                .execute()
+            )
+
+            if connection_response.error or not connection_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No accepted connection between provider and patient"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error verifying connection between provider {provider_user_id} and patient {patient_user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to verify provider-patient connection"
+            )
 
     @staticmethod
     async def _expire_old_recommendations(user_id: str) -> int:
@@ -500,7 +933,31 @@ class RecommendationsService:
         # 2. Update status column to 'expired'
         # 3. Update updated_at column
         # 4. Return count of updated records
-        pass
+        try:
+            response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .update({
+                    "status": "expired",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+                .eq("user_id", user_id)
+                .in_("status", ["active", "in_progress"])
+                .lt("valid_until", datetime.now(timezone.utc).isoformat())
+                .execute()
+            )
+
+            if response.error:
+                raise Exception(response.error)
+
+            return response.count or 0
+        except Exception as e:
+            logger.error(f"Error expiring recommendations for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to expire old recommendations"
+            )
+        
 
     @staticmethod
     async def get_recommendations_for_email(user_id: str, limit: int = 3) -> List[Dict]:
@@ -536,7 +993,35 @@ class RecommendationsService:
         # 3. Order by priority (urgent first, then high, medium, low), then created_at desc
         # 4. Limit to specified count
         # 5. Return only: title, description, category, priority columns
-        pass
+        try:
+            query = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("title, description, category, priority")
+                .eq("user_id", user_id)
+                .in_("status", ["active", "in_progress"])
+                .or_("valid_until.gt." + datetime.now(timezone.utc).isoformat() + ",valid_until.is.null")
+            )
+
+            query = query.order(
+                "priority", #CHECK : priority is varchar 
+                ascending=True,
+                nulls="last",
+                foreign_table=None
+            ).order("created_at", ascending=False).limit(limit)
+
+            response = query.execute()
+
+            if response.error:
+                raise Exception(response.error)
+
+            return response.data
+        except Exception as e:
+            logger.error(f"Error fetching email recommendations for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch email recommendations"
+            )
 
 
 # Singleton instance

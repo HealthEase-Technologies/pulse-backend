@@ -34,7 +34,20 @@ async def get_active_recommendations(
     # 1. Get user_id from current_user
     # 2. Call recommendations_service.get_active_recommendations()
     # 3. Format and return response
-    pass
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        recommendations = await recommendations_service.get_active_recommendations(patient_user_id, category)
+        return {
+            "total_count": len(recommendations),
+            "recommendations": recommendations
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch active recommendations: {str(e)}"
+        )
 
 
 @router.post("/generate", response_model=GenerateRecommendationsResponse)
@@ -53,7 +66,24 @@ async def generate_recommendations(
     # 1. Get user_id from current_user
     # 2. Call recommendations_service.generate_recommendations_for_user()
     # 3. Return generated recommendations
-    pass
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        generated_recommendations = await recommendations_service.generate_recommendations_for_user(
+            user_id=patient_user_id,
+            health_data=request.health_data
+        )
+        return {
+            "generated_count": len(generated_recommendations),
+            "generated_recommendations": generated_recommendations,
+            "message": f"Generated {len(generated_recommendations['recommendations'])} new personalized recommendations"       
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate recommendations: {str(e)}"
+        )
 
 
 @router.get("/history", response_model=RecommendationListResponse)
@@ -75,7 +105,33 @@ async def get_recommendation_history(
     # 2. Get user_id from current_user
     # 3. Call recommendations_service.get_recommendation_history()
     # 4. Format and return response
-    pass
+    try:
+        if start_date and end_date and start_date > end_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="start_date cannot be after end_date"
+            )
+
+        patient_user_id = current_user["db_user"]["id"]
+        history_recommendations = await recommendations_service.get_recommendation_history(
+            user_id=patient_user_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            offset=offset
+        )
+        return {
+            "total_count": len(history_recommendations),
+            "recommendations": history_recommendations
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch recommendation history: {str(e)}"
+        )
+        
 
 
 @router.get("/{recommendation_id}", response_model=RecommendationResponse)
@@ -92,8 +148,26 @@ async def get_recommendation_by_id(
     # 2. Call recommendations_service.get_recommendation_by_id()
     # 3. Raise 404 if not found
     # 4. Return recommendation
-    pass
-
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        recommendation = await recommendations_service.get_recommendation_by_id(
+            user_id=patient_user_id,
+            recommendation_id=recommendation_id
+        )
+        if not recommendation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recommendation not found"
+            )
+        return recommendation
+    except HTTPException:
+        raise
+    except Exception as e:  
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch recommendation: {str(e)}"
+        )
+    
 
 @router.patch("/{recommendation_id}/feedback", response_model=RecommendationResponse)
 async def submit_feedback(
@@ -111,7 +185,21 @@ async def submit_feedback(
     # 1. Get user_id from current_user
     # 2. Call recommendations_service.submit_feedback()
     # 3. Return updated recommendation
-    pass
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        updated_recommendation = await recommendations_service.submit_feedback(
+            user_id=patient_user_id,
+            recommendation_id=recommendation_id,
+            feedback=request.feedback
+        )
+        return updated_recommendation
+    except HTTPException:
+        raise
+    except Exception as e:  
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit feedback: {str(e)}"
+        )
 
 
 @router.patch("/{recommendation_id}/dismiss", response_model=RecommendationResponse)
@@ -129,7 +217,20 @@ async def dismiss_recommendation(
     # 1. Get user_id from current_user
     # 2. Call recommendations_service.dismiss_recommendation()
     # 3. Return updated recommendation
-    pass
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        updated_recommendation = await recommendations_service.dismiss_recommendation(
+            user_id=patient_user_id,
+            recommendation_id=recommendation_id
+        )
+        return updated_recommendation
+    except HTTPException:
+        raise   
+    except Exception as e:  
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to dismiss recommendation: {str(e)}"
+        )
 
 
 # =============================================================================
@@ -152,4 +253,22 @@ async def get_patient_recommendations(
     # 1. Get provider_user_id from current_user
     # 2. Call recommendations_service.get_patient_recommendations_for_provider()
     # 3. Format and return response
-    pass
+    try:
+        provider_user_id = current_user["db_user"]["id"]
+        recommendations = await recommendations_service.get_patient_recommendations_for_provider(
+            provider_user_id=provider_user_id,
+            patient_user_id=patient_user_id,
+            status_filter=status_filter
+        )
+        return {
+            "total_count": len(recommendations),
+            "recommendations": recommendations
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch patient's recommendations: {str(e)}"
+        )
+        
