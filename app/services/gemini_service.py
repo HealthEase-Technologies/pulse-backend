@@ -197,7 +197,25 @@ NEVER recommend:
         # )
         # result = AIRecommendationsResponse.model_validate_json(response.text)
         # return [rec.model_dump() for rec in result.recommendations]
-        pass
+            prompt = GeminiService._build_recommendation_prompt(health_context)
+            response = client.models.generate_content(
+                model=GeminiService.MODEL_NAME,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_json_schema": AIRecommendationsResponse.model_json_schema(),
+                    "system_instruction": GeminiService.SYSTEM_PROMPT,
+                    "temperature": 0.4,  # lower = safer medical responses
+                },
+            )
+            try:
+                
+                result = AIRecommendationsResponse.model_validate_json(response.text)
+            except Exception as e:
+                raise ValueError(f"Invalid AI response format: {e}")
+
+        # 4️⃣ Return DB-ready dicts
+        return [rec.model_dump() for rec in result.recommendations] 
 
     @staticmethod
     def _build_recommendation_prompt(health_context: dict) -> str:
@@ -280,7 +298,92 @@ NEVER recommend:
         # Make recommendations SPECIFIC to this patient's actual numbers.
         # """
         # return prompt
-        pass
+        patient = health_context.get("patient_profile", {})
+        biomarkers = health_context.get("biomarkers", [])
+        alerts = health_context.get("active_alerts", [])
+        insights = health_context.get("recent_insights", [])
+        status = health_context.get("overall_health_status", "unknown")
+
+        # ---- Format biomarkers ----
+        biomarker_text = ""
+        for b in biomarkers:
+            biomarker_text += f"""
+    - {b['biomarker_type'].replace('_', ' ').title()}:
+    Current Average: {b['current_avg']} {b['unit']}
+    Range (7 days): {b['min_value']} – {b['max_value']} {b['unit']}
+    Status: {b['status'].upper()}
+    Trend: {b['trend']}
+    Optimal Range: {b.get('optimal_range', 'N/A')}
+    """
+
+        # ---- Format goals ----
+        goals = patient.get("health_goals", [])
+        goals_text = "\n".join(
+            f"- {g['goal']} ({g.get('frequency', 'unspecified')})"
+            for g in goals
+        )
+
+        # ---- Format restrictions ----
+        restrictions = patient.get("health_restrictions", [])
+        restrictions_text = ", ".join(restrictions) if restrictions else "None reported"
+
+        # ---- Build prompt ----
+        prompt = f"""
+    You are a clinical-grade AI health assistant.
+    Generate personalized, safe, and evidence-based health recommendations.
+
+    === PATIENT PROFILE ===
+    Age: {patient.get('age', 'Unknown')} years
+    BMI: {patient.get('bmi', 'N/A')}
+    Height: {patient.get('height_cm', 'N/A')} cm
+    Weight: {patient.get('weight_kg', 'N/A')} kg
+
+    === HEALTH GOALS ===
+    {goals_text or 'No goals set'}
+
+    Goal Completion Rate (last 7 days):
+    {patient.get('goal_completion_rate_7d', 0) * 100:.0f}%
+
+    === HEALTH RESTRICTIONS / CONDITIONS ===
+    {restrictions_text}
+
+    === CURRENT BIOMARKERS (Last 7 Days) ===
+    {biomarker_text or 'No recent biomarker data'}
+
+    === OVERALL HEALTH STATUS ===
+    {status.upper().replace('_', ' ')}
+
+    === ACTIVE ALERTS ===
+    {chr(10).join(alerts) if alerts else 'No active alerts'}
+
+    === RECENT INSIGHTS ===
+    {chr(10).join(insights) if insights else 'No recent insights'}
+
+    TASK:
+    Generate 3–5 personalized health recommendations.
+
+    PRIORITIZATION RULES:
+    - Use "urgent" for critical or dangerous health values
+    - Use "high" for important but non-critical issues
+    - Use "medium" for beneficial improvements
+    - Use "low" for general wellness tips
+
+    SAFETY RULES:
+    - Be conservative and medically safe
+    - Do NOT diagnose conditions
+    - Include safety warnings when relevant
+    - Set requires_professional_consultation = true when appropriate
+
+    OUTPUT FORMAT:
+    - Return ONLY valid JSON
+    - Follow the provided JSON schema exactly
+    - Do not include explanations outside the JSON
+    """
+
+        return prompt.strip()
+            
+            
+        
 
 
 # Singleton instance
