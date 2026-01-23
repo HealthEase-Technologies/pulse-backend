@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.auth.dependencies import get_current_patient, get_current_provider
-from app.services.recommendations_service import recommendations_service
+from app.services.recommendations_service import (
+    recommendations_service,
+    enrich_recommendation,
+    calculate_list_stats
+)
 from app.schemas.recommendations import (
     RecommendationResponse,
     RecommendationListResponse,
@@ -37,9 +41,17 @@ async def get_active_recommendations(
     try:
         patient_user_id = current_user["db_user"]["id"]
         recommendations = await recommendations_service.get_active_recommendations(patient_user_id, category)
+
+        # Enrich each recommendation with computed fields
+        enriched = [enrich_recommendation(rec) for rec in recommendations]
+
+        # Calculate summary stats
+        stats = calculate_list_stats(enriched)
+
         return {
-            "total_count": len(recommendations),
-            "recommendations": recommendations
+            "total_count": len(enriched),
+            "recommendations": enriched,
+            **stats
         }
     except HTTPException:
         raise
@@ -52,7 +64,7 @@ async def get_active_recommendations(
 
 @router.post("/generate", response_model=GenerateRecommendationsResponse)
 async def generate_recommendations(
-    request: GenerateRecommendationsRequest,
+    request: Optional[GenerateRecommendationsRequest] = None,
     current_user: Dict = Depends(get_current_patient)
 ):
     """
@@ -60,22 +72,35 @@ async def generate_recommendations(
 
     Analyzes patient's health data and generates personalized recommendations
     using Gemini AI.
+
+    Request body is optional. If not provided, generates recommendations for all categories.
     """
-    # TODO: Implement endpoint
-    # Steps:
-    # 1. Get user_id from current_user
-    # 2. Call recommendations_service.generate_recommendations_for_user()
-    # 3. Return generated recommendations
     try:
         patient_user_id = current_user["db_user"]["id"]
-        generated_recommendations = await recommendations_service.generate_recommendations_for_user(
+
+        # Handle optional request body
+        categories = None
+        force_regenerate = False
+
+        if request:
+            if request.categories:
+                categories = [cat.value for cat in request.categories]
+            force_regenerate = request.force_regenerate
+
+        result = await recommendations_service.generate_recommendations_for_user(
             user_id=patient_user_id,
-            health_data=request.health_data
+            categories=categories,
+            force_regenerate=force_regenerate
         )
+
+        # Enrich recommendations with computed fields
+        recommendations = result.get("recommendations", [])
+        enriched = [enrich_recommendation(rec) for rec in recommendations]
+
         return {
-            "generated_count": len(generated_recommendations),
-            "generated_recommendations": generated_recommendations,
-            "message": f"Generated {len(generated_recommendations['recommendations'])} new personalized recommendations"       
+            "generated_count": result.get("generated_count", 0),
+            "recommendations": enriched,
+            "message": result.get("message", "Recommendations generated")
         }
     except HTTPException:
         raise
@@ -113,16 +138,23 @@ async def get_recommendation_history(
             )
 
         patient_user_id = current_user["db_user"]["id"]
-        history_recommendations = await recommendations_service.get_recommendation_history(
+        result = await recommendations_service.get_recommendation_history(
             user_id=patient_user_id,
             start_date=start_date,
             end_date=end_date,
             limit=limit,
             offset=offset
         )
+
+        # Enrich recommendations with computed fields
+        recommendations = result.get("recommendations", [])
+        enriched = [enrich_recommendation(rec) for rec in recommendations]
+        stats = calculate_list_stats(enriched)
+
         return {
-            "total_count": len(history_recommendations),
-            "recommendations": history_recommendations
+            "total_count": result.get("total_count", 0),
+            "recommendations": enriched,
+            **stats
         }
     except HTTPException:
         raise
@@ -151,18 +183,18 @@ async def get_recommendation_by_id(
     try:
         patient_user_id = current_user["db_user"]["id"]
         recommendation = await recommendations_service.get_recommendation_by_id(
-            user_id=patient_user_id,
-            recommendation_id=recommendation_id
+            recommendation_id=recommendation_id,
+            user_id=patient_user_id
         )
         if not recommendation:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Recommendation not found"
             )
-        return recommendation
+        return enrich_recommendation(recommendation)
     except HTTPException:
         raise
-    except Exception as e:  
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch recommendation: {str(e)}"
@@ -187,15 +219,24 @@ async def submit_feedback(
     # 3. Return updated recommendation
     try:
         patient_user_id = current_user["db_user"]["id"]
+
+        # Convert enum to string value
+        feedback_value = request.feedback.value if hasattr(request.feedback, "value") else request.feedback
+        difficulty_value = None
+        if request.difficulty_experienced:
+            difficulty_value = request.difficulty_experienced.value if hasattr(request.difficulty_experienced, "value") else request.difficulty_experienced
+
         updated_recommendation = await recommendations_service.submit_feedback(
-            user_id=patient_user_id,
             recommendation_id=recommendation_id,
-            feedback=request.feedback
+            user_id=patient_user_id,
+            feedback=feedback_value,
+            notes=request.notes,
+            difficulty_experienced=difficulty_value
         )
-        return updated_recommendation
+        return enrich_recommendation(updated_recommendation)
     except HTTPException:
         raise
-    except Exception as e:  
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit feedback: {str(e)}"
@@ -220,13 +261,13 @@ async def dismiss_recommendation(
     try:
         patient_user_id = current_user["db_user"]["id"]
         updated_recommendation = await recommendations_service.dismiss_recommendation(
-            user_id=patient_user_id,
-            recommendation_id=recommendation_id
+            recommendation_id=recommendation_id,
+            user_id=patient_user_id
         )
-        return updated_recommendation
+        return enrich_recommendation(updated_recommendation)
     except HTTPException:
-        raise   
-    except Exception as e:  
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to dismiss recommendation: {str(e)}"
@@ -255,18 +296,30 @@ async def get_patient_recommendations(
     # 3. Format and return response
     try:
         provider_user_id = current_user["db_user"]["id"]
+
+        # Convert status enum to string value if provided
+        status_value = None
+        if status_filter:
+            status_value = status_filter.value if hasattr(status_filter, "value") else status_filter
+
         recommendations = await recommendations_service.get_patient_recommendations_for_provider(
             provider_user_id=provider_user_id,
             patient_user_id=patient_user_id,
-            status_filter=status_filter
+            status_filter=status_value
         )
+
+        # Enrich recommendations with computed fields
+        enriched = [enrich_recommendation(rec) for rec in recommendations]
+        stats = calculate_list_stats(enriched)
+
         return {
-            "total_count": len(recommendations),
-            "recommendations": recommendations
+            "total_count": len(enriched),
+            "recommendations": enriched,
+            **stats
         }
     except HTTPException:
         raise
-    except Exception as e:  
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch patient's recommendations: {str(e)}"

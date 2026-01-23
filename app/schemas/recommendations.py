@@ -184,10 +184,11 @@ class UpdateStatusRequest(BaseModel):
 class RelatedMetric(BaseModel):
     """Health metric this recommendation relates to"""
     biomarker_type: str
+    target_improvement: Optional[str] = None  # From AI: what improvement is expected
     current_value: Optional[float] = None
     target_value: Optional[float] = None
-    unit: str
-    status: str  # optimal, normal, concerning, critical
+    unit: Optional[str] = None
+    status: Optional[str] = None  # optimal, normal, concerning, critical
     trend: Optional[str] = None  # improving, stable, declining
 
 

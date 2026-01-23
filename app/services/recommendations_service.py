@@ -1,10 +1,139 @@
 from app.config.database import supabase_admin
+from app.services.gemini_service import gemini_service, GeminiService
+from app.schemas.recommendations import CATEGORY_DISPLAY_MAP, PRIORITY_DISPLAY_MAP
 from fastapi import HTTPException, status
 from typing import Dict, Optional, List
 from datetime import date, datetime, timezone, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# HELPER FUNCTIONS FOR COMPUTED FIELDS
+# =============================================================================
+
+def _parse_datetime(dt_str: str) -> Optional[datetime]:
+    """Parse datetime string with various formats."""
+    if not dt_str:
+        return None
+    try:
+        # Replace Z with +00:00 for timezone
+        dt_str = dt_str.replace("Z", "+00:00")
+        return datetime.fromisoformat(dt_str)
+    except ValueError:
+        # Try parsing with dateutil for non-standard formats
+        try:
+            from dateutil import parser
+            return parser.isoparse(dt_str)
+        except Exception:
+            pass
+        # Fallback: try stripping microseconds variations
+        try:
+            # Handle cases like 2026-01-23T12:56:52.04703+00:00
+            if "." in dt_str and "+" in dt_str:
+                base, tz = dt_str.rsplit("+", 1)
+                if "." in base:
+                    date_part, micro = base.rsplit(".", 1)
+                    # Pad or truncate microseconds to 6 digits
+                    micro = micro[:6].ljust(6, "0")
+                    dt_str = f"{date_part}.{micro}+{tz}"
+            return datetime.fromisoformat(dt_str)
+        except Exception:
+            return None
+
+
+def enrich_recommendation(rec: Dict) -> Dict:
+    """
+    Enrich a recommendation with computed display fields.
+
+    Adds:
+        - category_display: Display info for the category (icon, color, etc.)
+        - priority_display: Display info for the priority
+        - is_new: True if created in last 24 hours
+        - is_expiring_soon: True if expiring in next 48 hours
+    """
+    # Category display
+    category = rec.get("category")
+    if category and category in CATEGORY_DISPLAY_MAP:
+        rec["category_display"] = CATEGORY_DISPLAY_MAP[category].model_dump()
+
+    # Priority display
+    priority = rec.get("priority")
+    if priority and priority in PRIORITY_DISPLAY_MAP:
+        rec["priority_display"] = PRIORITY_DISPLAY_MAP[priority]
+
+    # Is new (created in last 24 hours)
+    created_at = rec.get("created_at")
+    if created_at:
+        if isinstance(created_at, str):
+            created_dt = _parse_datetime(created_at)
+        else:
+            created_dt = created_at
+        if created_dt:
+            rec["is_new"] = (datetime.now(timezone.utc) - created_dt) < timedelta(hours=24)
+
+    # Is expiring soon (within next 48 hours)
+    valid_until = rec.get("valid_until")
+    if valid_until:
+        if isinstance(valid_until, str):
+            valid_until_dt = _parse_datetime(valid_until)
+        else:
+            valid_until_dt = valid_until
+        if valid_until_dt:
+            time_remaining = valid_until_dt - datetime.now(timezone.utc)
+            rec["is_expiring_soon"] = timedelta(0) < time_remaining < timedelta(hours=48)
+
+    return rec
+
+
+def calculate_list_stats(recommendations: List[Dict]) -> Dict:
+    """
+    Calculate summary statistics for a list of recommendations.
+
+    Returns:
+        Dict with by_category, by_priority, by_status counts,
+        urgent_count, new_count, in_progress_count
+    """
+    by_category = {}
+    by_priority = {}
+    by_status = {}
+    urgent_count = 0
+    new_count = 0
+    in_progress_count = 0
+
+    for rec in recommendations:
+        # Count by category
+        cat = rec.get("category")
+        if cat:
+            by_category[cat] = by_category.get(cat, 0) + 1
+
+        # Count by priority
+        pri = rec.get("priority")
+        if pri:
+            by_priority[pri] = by_priority.get(pri, 0) + 1
+            if pri == "urgent":
+                urgent_count += 1
+
+        # Count by status
+        stat = rec.get("status")
+        if stat:
+            by_status[stat] = by_status.get(stat, 0) + 1
+            if stat == "in_progress":
+                in_progress_count += 1
+
+        # Count new
+        if rec.get("is_new"):
+            new_count += 1
+
+    return {
+        "by_category": by_category,
+        "by_priority": by_priority,
+        "by_status": by_status,
+        "urgent_count": urgent_count,
+        "new_count": new_count,
+        "in_progress_count": in_progress_count
+    }
 
 # =============================================================================
 # DATABASE TABLE: ai_recommendations
@@ -104,8 +233,7 @@ class RecommendationsService:
         # 4. Store recommendations in database using _store_recommendations()
         # 5. Return the generated recommendations
         try:
-            # if force_regenerate is False, check for existing active recommendations
-             # 1️⃣ Check for existing active recommendations (if not forcing regeneration)
+            # 1️⃣ Check for existing active recommendations (if not forcing regeneration)
             if not force_regenerate:
                 existing_response = (
                     supabase_admin
@@ -116,30 +244,44 @@ class RecommendationsService:
                     .execute()
                 )
 
-                if existing_response.error:
-                    raise Exception(existing_response.error)
-
                 if existing_response.data and len(existing_response.data) > 0:
-                    return existing_response.data
+                    return {
+                        "generated_count": 0,
+                        "recommendations": existing_response.data,
+                        "message": "Active recommendations already exist"
+                    }
 
             # 2️⃣ Build health context
             health_context = await RecommendationsService._build_health_context(user_id)
 
             # 3️⃣ Generate recommendations via Gemini
             recommendations = await gemini_service.generate_health_recommendations(
-                health_context,
-                categories
+                health_context
             )
-            # 4️⃣ Store recommendations
+
+            # 4️⃣ Filter by categories if specified
+            if categories:
+                recommendations = [
+                    rec for rec in recommendations
+                    if rec.get("category") in categories
+                ]
+
+            # 5️⃣ Store recommendations
             stored_recommendations = await RecommendationsService._store_recommendations(
                 user_id,
                 recommendations,
                 health_context
             )
 
-            # 5️⃣ Return response
-            return stored_recommendations
+            # 6️⃣ Return response
+            return {
+                "generated_count": len(stored_recommendations),
+                "recommendations": stored_recommendations,
+                "message": f"Generated {len(stored_recommendations)} new recommendations"
+            }
 
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error generating recommendations for user {user_id}: {str(e)}")
             raise HTTPException(
@@ -173,34 +315,38 @@ class RecommendationsService:
             users_response = (
                 supabase_admin
                 .table("daily_health_summaries")
-                .select("user_id", distinct=True)
+                .select("user_id")
                 .eq("summary_date", yesterday.isoformat())
                 .execute()
             )
 
-            if users_response.error:
-                raise Exception(users_response.error)
-
-            user_ids = [record["user_id"] for record in users_response.data]
+            # Get unique user_ids
+            user_ids = list(set(record["user_id"] for record in users_response.data))
 
             total_users_processed = 0
             recommendations_generated = 0
 
             # 2️⃣ Generate recommendations for each user
             for user_id in user_ids:
-                recs = await RecommendationsService.generate_recommendations_for_user(
-                    user_id,
-                    force_regenerate=False
-                )
-                if recs:
-                    recommendations_generated += len(recs)
-                total_users_processed += 1
+                try:
+                    result = await RecommendationsService.generate_recommendations_for_user(
+                        user_id,
+                        force_regenerate=False
+                    )
+                    if result and result.get("recommendations"):
+                        recommendations_generated += len(result["recommendations"])
+                    total_users_processed += 1
+                except Exception as user_error:
+                    logger.warning(f"Failed to generate recommendations for user {user_id}: {str(user_error)}")
+                    continue
 
             # 3️⃣ Return summary
             return {
                 "total_users_processed": total_users_processed,
                 "recommendations_generated": recommendations_generated
             }
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error generating daily recommendations: {str(e)}")
             raise HTTPException(
@@ -255,8 +401,7 @@ class RecommendationsService:
             if category:
                 query = query.eq("category", category)
 
-            response = query.order("created_at", ascending=False).execute()
-            from datetime import datetime
+            response = query.execute()
 
             priority_order = {
                 "urgent": 0,
@@ -334,17 +479,16 @@ class RecommendationsService:
             if end_date:
                 query = query.lte("created_at", end_date.isoformat())
 
-            query = query.order("created_at", ascending=False).limit(limit).offset(offset)
+            query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
 
             response = query.execute()
 
-            if response.error:
-                raise Exception(response.error)
-
             return {
                 "recommendations": response.data,
-                "total_count": response.count or 0
+                "total_count": response.count or len(response.data)
             }
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error fetching recommendation history for user {user_id}: {str(e)}")
             raise HTTPException(
@@ -383,16 +527,15 @@ class RecommendationsService:
                 .select("*")
                 .eq("id", recommendation_id)
                 .eq("user_id", user_id)
-                .single()
                 .execute()
             )
 
-            if response.error:
-                if "No rows found" in str(response.error):
-                    return None
-                raise Exception(response.error)
+            if not response.data or len(response.data) == 0:
+                return None
 
-            return response.data
+            return response.data[0]
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error fetching recommendation {recommendation_id} for user {user_id}: {str(e)}")
             raise HTTPException(
@@ -441,23 +584,31 @@ class RecommendationsService:
         # 4. Update updated_at timestamp
         # 5. Return updated recommendation
         try:
-            query= supabase_admin.table("ai_recommendations").select("*").eq("id", recommendation_id).eq("user_id", user_id).single()
-            existing_response = query.execute()
-            if existing_response.error:
-                raise Exception(existing_response.error)
-            if not existing_response.data:
+            # Verify recommendation exists and belongs to user
+            existing_response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not existing_response.data or len(existing_response.data) == 0:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Recommendation not found"
                 )
-            
+
             update_data = {
                 "user_feedback": feedback,
-                "feedback_notes": notes,
-                "difficulty_experienced": difficulty_experienced,
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
 
+            if notes:
+                update_data["feedback_notes"] = notes
+            if difficulty_experienced:
+                update_data["difficulty_experienced"] = difficulty_experienced
             if feedback == "implemented":
                 update_data["status"] = "completed"
 
@@ -467,14 +618,12 @@ class RecommendationsService:
                 .update(update_data)
                 .eq("id", recommendation_id)
                 .eq("user_id", user_id)
-                .single()
                 .execute()
             )
 
-            if response.error:
-                raise Exception(response.error)
-
-            return response.data
+            return response.data[0] if response.data else existing_response.data[0]
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error submitting feedback for recommendation {recommendation_id} by user {user_id}: {str(e)}")
             raise HTTPException(
@@ -509,11 +658,17 @@ class RecommendationsService:
         # 3. Update updated_at timestamp
         # 4. Return updated recommendation
         try:
-            query= supabase_admin.table("ai_recommendations").select("*").eq("id", recommendation_id).eq("user_id", user_id).single()
-            existing_response = query.execute()
-            if existing_response.error:
-                raise Exception(existing_response.error)
-            if not existing_response.data:
+            # Verify recommendation exists and belongs to user
+            existing_response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not existing_response.data or len(existing_response.data) == 0:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Recommendation not found"
@@ -528,14 +683,12 @@ class RecommendationsService:
                 })
                 .eq("id", recommendation_id)
                 .eq("user_id", user_id)
-                .single()
                 .execute()
             )
 
-            if response.error:
-                raise Exception(response.error)
-
-            return response.data
+            return response.data[0] if response.data else existing_response.data[0]
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error dismissing recommendation {recommendation_id} by user {user_id}: {str(e)}")
             raise HTTPException(
@@ -595,12 +748,9 @@ class RecommendationsService:
             if status_filter:
                 query = query.eq("status", status_filter)
 
-            query = query.order("created_at", ascending=False)
+            query = query.order("created_at", desc=True)
 
             response = query.execute()
-
-            if response.error:
-                raise Exception(response.error)
 
             return response.data
         except HTTPException:
@@ -657,30 +807,89 @@ class RecommendationsService:
                 .table("patients")
                 .select("health_goals, health_restrictions, date_of_birth, height_cm, weight_kg")
                 .eq("user_id", user_id)
-                .single()
                 .execute()
             )
 
-            if profile_response.error:
-                raise Exception(profile_response.error)
+            if not profile_response.data or len(profile_response.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Patient profile not found"
+                )
 
-            health_context["patient_profile"] = profile_response.data
+            patient_data = profile_response.data[0]
 
-            # 2️⃣ Fetch recent biomarkers
+            # Calculate age from date_of_birth
+            age = None
+            if patient_data.get("date_of_birth"):
+                dob_str = patient_data["date_of_birth"]
+                try:
+                    # Handle date-only strings (YYYY-MM-DD)
+                    if "T" not in dob_str and len(dob_str) == 10:
+                        dob_date = date.fromisoformat(dob_str)
+                    else:
+                        # Handle ISO datetime strings
+                        dob_dt = datetime.fromisoformat(dob_str.replace("Z", "+00:00"))
+                        dob_date = dob_dt.date()
+
+                    today = date.today()
+                    age = today.year - dob_date.year - ((today.month, today.day) < (dob_date.month, dob_date.day))
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Could not parse date_of_birth '{dob_str}': {e}")
+                    age = None
+
+            # Calculate BMI if height and weight available
+            bmi = None
+            height_cm = patient_data.get("height_cm")
+            weight_kg = patient_data.get("weight_kg")
+            if height_cm and weight_kg:
+                height_m = height_cm / 100
+                bmi = round(weight_kg / (height_m ** 2), 1)
+
+            health_context["patient_profile"] = {
+                "age": age,
+                "height_cm": height_cm,
+                "weight_kg": weight_kg,
+                "bmi": bmi,
+                "health_goals": patient_data.get("health_goals") or [],
+                "health_restrictions": patient_data.get("health_restrictions") or []
+            }
+
+            # 2️⃣ Fetch recent biomarkers (last 7 days)
             seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             biomarkers_response = (
                 supabase_admin
                 .table("biomarkers")
-                .select("biomarker_type, value, recorded_at")
+                .select("biomarker_type, value, unit, recorded_at")
                 .eq("user_id", user_id)
                 .gte("recorded_at", seven_days_ago)
+                .order("recorded_at", desc=True)
                 .execute()
             )
 
-            if biomarkers_response.error:
-                raise Exception(biomarkers_response.error)
+            # Process biomarkers into summary format
+            biomarkers_by_type = {}
+            for b in biomarkers_response.data:
+                b_type = b["biomarker_type"]
+                if b_type not in biomarkers_by_type:
+                    biomarkers_by_type[b_type] = []
+                biomarkers_by_type[b_type].append(b)
 
-            health_context["recent_biomarkers"] = biomarkers_response.data
+            biomarkers_summary = []
+            for b_type, readings in biomarkers_by_type.items():
+                values = [r["value"] for r in readings]
+                unit = readings[0].get("unit", "")
+                biomarkers_summary.append({
+                    "biomarker_type": b_type,
+                    "current_avg": round(sum(values) / len(values), 1),
+                    "min_value": min(values),
+                    "max_value": max(values),
+                    "unit": unit,
+                    "status": "normal",  # Would be determined by comparing with ranges
+                    "trend": "stable",   # Would be calculated from historical data
+                    "optimal_range": "N/A"
+                })
+
+            health_context["biomarkers"] = biomarkers_summary
 
             # 3️⃣ Fetch latest health summary
             summary_response = (
@@ -688,48 +897,41 @@ class RecommendationsService:
                 .table("daily_health_summaries")
                 .select("summary_data, overall_status")
                 .eq("user_id", user_id)
-                .order("summary_date", ascending=False)
+                .order("summary_date", desc=True)
                 .limit(1)
-                .single()
                 .execute()
             )
 
-            if summary_response.error:
-                raise Exception(summary_response.error)
-
-            health_context["latest_health_summary"] = summary_response.data
+            if summary_response.data and len(summary_response.data) > 0:
+                health_context["latest_summary"] = summary_response.data[0].get("summary_data")
+                health_context["overall_health_status"] = summary_response.data[0].get("overall_status", "unknown")
+            else:
+                health_context["latest_summary"] = None
+                health_context["overall_health_status"] = "unknown"
 
             # 4️⃣ Calculate goal completion rate
             completion_response = (
                 supabase_admin
                 .table("goal_completions")
-                .select("status", count="exact")
+                .select("status")
                 .eq("user_id", user_id)
                 .gte("completion_date", seven_days_ago)
                 .execute()
             )
 
-            if completion_response.error:
-                raise Exception(completion_response.error)
-
-            total_goals = completion_response.count or 0
-            completed_goals = sum(1 for record in completion_response.data if record["status"] == "completed")
+            total_goals = len(completion_response.data) if completion_response.data else 0
+            completed_goals = sum(1 for record in completion_response.data if record.get("status") == "completed")
             completion_rate = (completed_goals / total_goals) if total_goals > 0 else 0.0
 
-            health_context["goal_completion_rate"] = completion_rate
-            
-            # TODO 
-            #DO THIS PART !!!!!
+            health_context["patient_profile"]["goal_completion_rate_7d"] = completion_rate
 
-            # 5️⃣ Calculate trends for each biomarker (placeholder logic)
-            trends = {}
-            for biomarker in health_context["recent_biomarkers"]:
-                biomarker_type = biomarker["biomarker_type"]
-                # Placeholder: In real implementation, analyze historical data for trend
-                trends[biomarker_type] = "stable"  # or "improving", "declining"
-            
-            health_context["biomarker_trends"] = trends
+            # 5️⃣ Fetch active alerts (placeholder - adjust based on your alerts table)
+            health_context["active_alerts"] = []
+            health_context["recent_insights"] = []
+
             return health_context
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error building health context for user {user_id}: {str(e)}")
             raise HTTPException(
@@ -766,49 +968,89 @@ class RecommendationsService:
                 status, valid_from, valid_until, created_at, updated_at
             ) VALUES (...)
         """
-        # TODO: Implement recommendation storage
-        # Steps:
-        # 1. For each recommendation, create record with columns:
-        #    - user_id: from parameter
-        #    -- Core content
-        #    - category: from AI response
-        #    - title: from AI response
-        #    - description: from AI response
-        #    - detailed_explanation: from AI response
-        #    -- Why this recommendation
-        #    - reasoning: from AI response
-        #    - expected_benefit: from AI response
-        #    - time_to_results: from AI response
-        #    -- Action details
-        #    - action_steps: from AI response (JSONB)
-        #    - frequency: from AI response
-        #    - duration: from AI response
-        #    - best_time: from AI response
-        #    - effort_minutes_per_day: from AI response
-        #    -- Priority & difficulty
-        #    - priority: from AI response
-        #    - difficulty: from AI response
-        #    -- Health context
-        #    - related_metrics: from AI response (JSONB)
-        #    - related_goal: from AI response
-        #    - contraindications: from AI response (JSONB)
-        #    - health_context: snapshot (JSONB)
-        #    -- Safety
-        #    - requires_professional_consultation: from AI response
-        #    - safety_warning: from AI response
-        #    - disclaimer: standard disclaimer text
-        #    -- AI metadata
-        #    - ai_model: 'gemini-2.0-flash'
-        #    - confidence_score: from AI response
-        #    -- Status & timestamps
-        #    - status: 'active'
-        #    - valid_from: NOW()
-        #    - valid_until: NOW() + 7 days
-        #    - created_at: NOW()
-        #    - updated_at: NOW()
-        # 2. Insert into ai_recommendations table
-        # 3. Return inserted records with all columns
-        pass
+        try:
+            now = datetime.now(timezone.utc)
+            valid_until = now + timedelta(days=7)
+
+            standard_disclaimer = (
+                "This is a general wellness suggestion based on AI analysis. "
+                "It is not a substitute for professional medical advice. "
+                "Consult your healthcare provider for personalized medical guidance."
+            )
+
+            records_to_insert = []
+            for rec in recommendations:
+                # Convert action_steps from Pydantic model format if needed
+                action_steps = rec.get("action_steps", [])
+                if action_steps and hasattr(action_steps[0], "model_dump"):
+                    action_steps = [step.model_dump() for step in action_steps]
+
+                # Convert related_metrics from Pydantic model format if needed
+                related_metrics = rec.get("related_metrics", [])
+                if related_metrics and hasattr(related_metrics[0], "model_dump"):
+                    related_metrics = [metric.model_dump() for metric in related_metrics]
+
+                record = {
+                    "user_id": user_id,
+                    # Core content
+                    "category": rec.get("category"),
+                    "title": rec.get("title"),
+                    "description": rec.get("description"),
+                    "detailed_explanation": rec.get("detailed_explanation"),
+                    # Why this recommendation
+                    "reasoning": rec.get("reasoning"),
+                    "expected_benefit": rec.get("expected_benefit"),
+                    "time_to_results": rec.get("time_to_results"),
+                    # Action details
+                    "action_steps": action_steps,
+                    "frequency": rec.get("frequency"),
+                    "duration": rec.get("duration"),
+                    "best_time": rec.get("best_time"),
+                    "effort_minutes_per_day": rec.get("effort_minutes_per_day"),
+                    # Priority & difficulty
+                    "priority": rec.get("priority"),
+                    "difficulty": rec.get("difficulty"),
+                    # Health context
+                    "related_metrics": related_metrics,
+                    "related_goal": rec.get("related_goal"),
+                    "contraindications": rec.get("contraindications"),
+                    "health_context": health_context,
+                    # Safety
+                    "requires_professional_consultation": rec.get("requires_professional_consultation", False),
+                    "safety_warning": rec.get("safety_warning"),
+                    "disclaimer": standard_disclaimer,
+                    # AI metadata
+                    "ai_model": GeminiService.MODEL_NAME,
+                    "confidence_score": rec.get("confidence_score"),
+                    # Status & timestamps
+                    "status": "active",
+                    "valid_from": now.isoformat(),
+                    "valid_until": valid_until.isoformat(),
+                    "created_at": now.isoformat(),
+                    "updated_at": now.isoformat()
+                }
+                records_to_insert.append(record)
+
+            # Batch insert all recommendations
+            if records_to_insert:
+                response = (
+                    supabase_admin
+                    .table("ai_recommendations")
+                    .insert(records_to_insert)
+                    .execute()
+                )
+                return response.data
+
+            return []
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error storing recommendations for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to store recommendations"
+            )
 
     @staticmethod
     async def _verify_provider_patient_connection(
@@ -847,20 +1089,16 @@ class RecommendationsService:
                 .table("providers")
                 .select("id")
                 .eq("user_id", provider_user_id)
-                .single()
                 .execute()
             )
 
-            if provider_response.error:
-                raise Exception(provider_response.error)
-
-            if not provider_response.data:
+            if not provider_response.data or len(provider_response.data) == 0:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Provider profile not found"
                 )
 
-            provider_id = provider_response.data["id"]
+            provider_id = provider_response.data[0]["id"]
 
             # Get patient profile ID
             patient_response = (
@@ -868,20 +1106,16 @@ class RecommendationsService:
                 .table("patients")
                 .select("id")
                 .eq("user_id", patient_user_id)
-                .single()
                 .execute()
             )
 
-            if patient_response.error:
-                raise Exception(patient_response.error)
-
-            if not patient_response.data:
+            if not patient_response.data or len(patient_response.data) == 0:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Patient profile not found"
                 )
 
-            patient_id = patient_response.data["id"]
+            patient_id = patient_response.data[0]["id"]
 
             # Check connection status
             connection_response = (
@@ -891,11 +1125,10 @@ class RecommendationsService:
                 .eq("provider_id", provider_id)
                 .eq("patient_id", patient_id)
                 .eq("status", "accepted")
-                .single()
                 .execute()
             )
 
-            if connection_response.error or not connection_response.data:
+            if not connection_response.data or len(connection_response.data) == 0:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="No accepted connection between provider and patient"
@@ -934,23 +1167,23 @@ class RecommendationsService:
         # 3. Update updated_at column
         # 4. Return count of updated records
         try:
+            now = datetime.now(timezone.utc).isoformat()
             response = (
                 supabase_admin
                 .table("ai_recommendations")
                 .update({
                     "status": "expired",
-                    "updated_at": datetime.now(timezone.utc).isoformat()
+                    "updated_at": now
                 })
                 .eq("user_id", user_id)
                 .in_("status", ["active", "in_progress"])
-                .lt("valid_until", datetime.now(timezone.utc).isoformat())
+                .lt("valid_until", now)
                 .execute()
             )
 
-            if response.error:
-                raise Exception(response.error)
-
-            return response.count or 0
+            return len(response.data) if response.data else 0
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error expiring recommendations for user {user_id}: {str(e)}")
             raise HTTPException(
@@ -994,28 +1227,33 @@ class RecommendationsService:
         # 4. Limit to specified count
         # 5. Return only: title, description, category, priority columns
         try:
+            now = datetime.now(timezone.utc).isoformat()
             query = (
                 supabase_admin
                 .table("ai_recommendations")
                 .select("title, description, category, priority")
                 .eq("user_id", user_id)
                 .in_("status", ["active", "in_progress"])
-                .or_("valid_until.gt." + datetime.now(timezone.utc).isoformat() + ",valid_until.is.null")
+                .or_(f"valid_until.gt.{now},valid_until.is.null")
+                .order("created_at", desc=True)
+                .limit(limit * 2)  # Fetch more to allow for priority sorting
             )
-
-            query = query.order(
-                "priority", #CHECK : priority is varchar 
-                ascending=True,
-                nulls="last",
-                foreign_table=None
-            ).order("created_at", ascending=False).limit(limit)
 
             response = query.execute()
 
-            if response.error:
-                raise Exception(response.error)
+            if not response.data:
+                return []
 
-            return response.data
+            # Sort by priority in Python since priority ordering by string isn't reliable
+            priority_order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+            sorted_data = sorted(
+                response.data,
+                key=lambda x: priority_order.get(x.get("priority"), 3)
+            )
+
+            return sorted_data[:limit]
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error fetching email recommendations for user {user_id}: {str(e)}")
             raise HTTPException(

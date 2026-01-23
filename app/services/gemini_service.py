@@ -1,6 +1,6 @@
 from google import genai
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Literal
 from app.config.settings import settings
 import logging
 
@@ -31,8 +31,8 @@ class AIRecommendation(BaseModel):
     """Single recommendation from Gemini AI - comprehensive healthcare format"""
 
     # Core content
-    category: str = Field(
-        description="Category: nutrition, exercise, sleep, lifestyle, medical, mental_health, hydration, medication"
+    category: Literal["nutrition", "exercise", "sleep", "lifestyle", "medical", "mental_health", "hydration", "medication"] = Field(
+        description="Category of this recommendation"
     )
     title: str = Field(
         description="Short, actionable title (max 80 chars). Start with action verb."
@@ -59,8 +59,8 @@ class AIRecommendation(BaseModel):
     action_steps: List[AIActionStep] = Field(
         description="3-5 specific action steps to implement this recommendation"
     )
-    frequency: str = Field(
-        description="How often: once, daily, weekly, as_needed, ongoing"
+    frequency: Literal["once", "daily", "weekly", "as_needed", "ongoing"] = Field(
+        description="How often to do this action"
     )
     duration: str = Field(
         description="How long to follow: '1 week', '2 weeks', '1 month', 'Ongoing'"
@@ -74,11 +74,11 @@ class AIRecommendation(BaseModel):
     )
 
     # Priority & difficulty
-    priority: str = Field(
-        description="Priority: urgent (critical health), high (important), medium (beneficial), low (optimization)"
+    priority: Literal["urgent", "high", "medium", "low"] = Field(
+        description="Priority: urgent=critical health, high=important, medium=beneficial, low=optimization"
     )
-    difficulty: str = Field(
-        description="Difficulty: easy (simple habit), moderate (some effort), challenging (lifestyle change)"
+    difficulty: Literal["easy", "moderate", "challenging"] = Field(
+        description="Difficulty: easy=simple habit, moderate=some effort, challenging=lifestyle change"
     )
 
     # Health context
@@ -123,7 +123,7 @@ class AIRecommendationsResponse(BaseModel):
 class GeminiService:
     """Service for AI-powered health recommendations using Google Gemini"""
 
-    MODEL_NAME = "gemini-2.0-flash"
+    MODEL_NAME = "gemini-2.5-flash"
 
     SYSTEM_PROMPT = """You are an AI health advisor for Pulse, a health monitoring app.
 Your role is to generate personalized, actionable health recommendations based on patient data.
@@ -178,44 +178,26 @@ NEVER recommend:
             - requires_professional_consultation, safety_warning
             - confidence_score, ai_model
         """
-        # TODO: Implement Gemini recommendation generation
-        # Steps:
-        # 1. Build the prompt using _build_recommendation_prompt()
-        # 2. Call Gemini API with structured output schema
-        # 3. Validate and return recommendations list
-        #
-        # Example implementation:
-        # prompt = GeminiService._build_recommendation_prompt(health_context)
-        # response = client.models.generate_content(
-        #     model=GeminiService.MODEL_NAME,
-        #     contents=prompt,
-        #     config={
-        #         "response_mime_type": "application/json",
-        #         "response_json_schema": AIRecommendationsResponse.model_json_schema(),
-        #         "system_instruction": GeminiService.SYSTEM_PROMPT,
-        #     },
-        # )
-        # result = AIRecommendationsResponse.model_validate_json(response.text)
-        # return [rec.model_dump() for rec in result.recommendations]
+        try:
             prompt = GeminiService._build_recommendation_prompt(health_context)
             response = client.models.generate_content(
                 model=GeminiService.MODEL_NAME,
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
-                    "response_json_schema": AIRecommendationsResponse.model_json_schema(),
+                    "response_schema": AIRecommendationsResponse,
                     "system_instruction": GeminiService.SYSTEM_PROMPT,
                     "temperature": 0.4,  # lower = safer medical responses
                 },
             )
-            try:
-                
-                result = AIRecommendationsResponse.model_validate_json(response.text)
-            except Exception as e:
-                raise ValueError(f"Invalid AI response format: {e}")
 
-        # 4️⃣ Return DB-ready dicts
-        return [rec.model_dump() for rec in result.recommendations] 
+            result = AIRecommendationsResponse.model_validate_json(response.text)
+
+            # Return DB-ready dicts
+            return [rec.model_dump() for rec in result.recommendations]
+        except Exception as e:
+            logger.error(f"Error generating recommendations from Gemini: {str(e)}")
+            raise ValueError(f"Failed to generate AI recommendations: {e}") 
 
     @staticmethod
     def _build_recommendation_prompt(health_context: dict) -> str:
@@ -381,9 +363,6 @@ NEVER recommend:
     """
 
         return prompt.strip()
-            
-            
-        
 
 
 # Singleton instance
