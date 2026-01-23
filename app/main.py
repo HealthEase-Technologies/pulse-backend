@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
-from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes
+from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.patient_service import PatientService
 from app.services.health_summary_service import health_summary_service
+from app.services.recommendations_service import recommendations_service
 import logging
 
 # Configure logging
@@ -49,6 +50,8 @@ app.include_router(biomarkers.router, prefix=settings.api_v1_str)
 app.include_router(health_summaries.router, prefix=settings.api_v1_str)
 # Sprint 5.3 - HCP Notes
 app.include_router(notes.router, prefix=settings.api_v1_str)
+# AI Recommendations
+app.include_router(recommendations.router, prefix=settings.api_v1_str)
 
 @app.get("/")
 async def root():
@@ -131,6 +134,21 @@ async def generate_evening_summary():
     except Exception as e:
         logger.error(f"Error generating evening summary: {str(e)}")
 
+
+async def generate_daily_recommendations():
+    """
+    Cron job to generate AI recommendations for all users
+    Runs daily at 00:20 UTC (after morning briefing generation)
+    Uses health data to generate personalized recommendations via Gemini AI
+    """
+    try:
+        logger.info("Starting daily AI recommendations generation...")
+        result = await recommendations_service.generate_daily_recommendations()
+        logger.info(f"Daily recommendations generation completed: {result}")
+    except Exception as e:
+        logger.error(f"Error generating daily recommendations: {str(e)}")
+
+
 @app.on_event("startup")
 async def startup_event():
     """
@@ -183,6 +201,15 @@ async def startup_event():
             replace_existing=True
         )
 
+        # Generate AI recommendations at 00:20 UTC (after morning briefing)
+        scheduler.add_job(
+            generate_daily_recommendations,
+            CronTrigger(hour=0, minute=20, timezone="UTC"),
+            id="generate_daily_recommendations",
+            name="Generate AI recommendations for all users",
+            replace_existing=True
+        )
+
         scheduler.start()
         logger.info("Scheduler started successfully with daily cron jobs")
         logger.info("Jobs scheduled:")
@@ -190,6 +217,7 @@ async def startup_event():
         logger.info("  - Mark missed goals: 00:05 UTC")
         logger.info("  - Generate morning briefing: 00:10 UTC")
         logger.info("  - Send morning briefing emails: 00:15 UTC")
+        logger.info("  - Generate AI recommendations: 00:20 UTC")
         logger.info("  - Generate evening summary: 23:59 UTC")
     except Exception as e:
         logger.error(f"Error starting scheduler: {str(e)}")

@@ -2,7 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from app.config.settings import settings
-from typing import Optional
+from typing import Optional, List, Dict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -218,21 +218,84 @@ The Pulse Team
             return f"{avg} {unit}"
 
     @staticmethod
+    def _format_recommendation_text(recommendations: List[Dict]) -> str:
+        """Helper to format recommendations for plain text email"""
+        if not recommendations:
+            return "No recommendations at this time."
+
+        lines = []
+        for rec in recommendations:
+            priority_indicator = "[!]" if rec.get("priority") == "high" else ""
+            category = rec.get("category", "").replace("_", " ").title()
+            title = rec.get("title", "")
+            description = rec.get("description", "")
+            lines.append(f"{priority_indicator} [{category}] {title}")
+            lines.append(f"   {description}")
+            lines.append("")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_recommendation_html(recommendations: List[Dict]) -> str:
+        """Helper to format recommendations for HTML email"""
+        if not recommendations:
+            return "<p>No recommendations at this time.</p>"
+
+        priority_colors = {
+            "high": "#dc3545",
+            "medium": "#ffc107",
+            "low": "#28a745"
+        }
+
+        category_icons = {
+            "nutrition": "🥗",
+            "exercise": "🏃",
+            "sleep": "😴",
+            "lifestyle": "🌟",
+            "medical": "⚕️"
+        }
+
+        html_parts = []
+        for rec in recommendations:
+            priority = rec.get("priority", "medium")
+            category = rec.get("category", "lifestyle")
+            icon = category_icons.get(category, "💡")
+            color = priority_colors.get(priority, "#ffc107")
+            title = rec.get("title", "")
+            description = rec.get("description", "")
+
+            html_parts.append(f"""
+            <div style="border-left: 4px solid {color}; padding: 10px 15px; margin: 10px 0; background-color: #f8f9fa;">
+                <p style="margin: 0; font-weight: bold;">{icon} {title}</p>
+                <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">{description}</p>
+                <p style="margin: 5px 0 0 0; font-size: 12px; color: #888;">
+                    <span style="text-transform: capitalize;">{category.replace('_', ' ')}</span> |
+                    <span style="color: {color}; text-transform: uppercase;">{priority} priority</span>
+                </p>
+            </div>
+            """)
+
+        return "".join(html_parts)
+
+    @staticmethod
     def send_morning_briefing(
         patient_email: str,
         patient_name: str,
-        summary_data: dict
+        summary_data: dict,
+        recommendations: Optional[List[Dict]] = None
     ):
         subject = f"Your Daily Health Briefing - {summary_data.get('date', 'Yesterday')}"
 
         metrics = summary_data.get("metrics", {})
         insights = summary_data.get("insights", [])
         alerts = summary_data.get("alerts", [])
+        recommendations = recommendations or []
 
         metric_text = "\n".join(
             f"- {k.replace('_', ' ').title()}: {EmailService._format_metric_value(k, v)}"
             for k, v in metrics.items()
         )
+
+        recommendations_text = EmailService._format_recommendation_text(recommendations)
 
         body_text = f"""
 Good morning {patient_name},
@@ -248,6 +311,9 @@ Insights:
 Alerts:
 {chr(10).join(alerts) if alerts else 'No alerts'}
 
+AI Recommendations:
+{recommendations_text}
+
 View your dashboard:
 https://pulse-so.vercel.app/dashboard
 
@@ -255,9 +321,11 @@ Best regards,
 The Pulse Team
 """
 
+        recommendations_html = EmailService._format_recommendation_html(recommendations)
+
         body_html = f"""
 <html>
-  <body>
+  <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
     <h2>🌅 Good Morning, {patient_name}</h2>
     <p><strong>Date:</strong> {summary_data.get('date', 'Yesterday')}</p>
 
@@ -273,8 +341,11 @@ The Pulse Team
     <h3>⚠️ Alerts</h3>
     {''.join(f"<p>{a}</p>" for a in alerts) or "<p>No alerts</p>"}
 
+    <h3>🤖 AI Recommendations</h3>
+    {recommendations_html}
+
     <br>
-    <a href="https://pulse-so.vercel.app/dashboard">
+    <a href="https://pulse-so.vercel.app/dashboard" style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">
       View Full Dashboard
     </a>
 
