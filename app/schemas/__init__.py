@@ -97,6 +97,14 @@ from app.schemas.health_summary import (
     MorningBriefingEmailData
 )
 
+# Note schemas (Sprint 5.3)
+from app.schemas.note import (
+    NoteCreate,
+    NoteUpdate,
+    NoteResponse,
+    MarkNoteAsReadRequest
+)
+
 __all__ = [
     # User
     "UserRole",
@@ -166,4 +174,9 @@ __all__ = [
     "OverallHealthStatus",
     "DailyHealthSummaryResponse",
     "MorningBriefingEmailData",
+    # Note (Sprint 5.3)
+    "NoteCreate",
+    "NoteUpdate",
+    "NoteResponse",
+    "MarkNoteAsReadRequest",
 ]

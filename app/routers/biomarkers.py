@@ -33,7 +33,15 @@ async def get_biomarker_ranges():
     - Call biomarker_service.get_biomarker_ranges()
     - Return reference ranges
     """
-    pass
+    try:
+        ranges = await biomarker_service.get_biomarker_ranges()
+        return ranges
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch biomarker ranges"
+        )
 
 
 # ==================== PATIENT BIOMARKER ENDPOINTS ====================
@@ -59,7 +67,29 @@ async def insert_biomarker_data(
     - Call biomarker_service.insert_biomarker_data()
     - Return success message with created biomarker record
     """
-    pass
+    try:
+        user_id = current_user["db_user"]["id"]
+        biomarker_record = await biomarker_service.insert_biomarker_data(
+            user_id=user_id,
+            biomarker_type=request.biomarker_type,
+            value=request.value,
+            unit=request.unit,
+            source=request.source,
+            device_id=request.device_id,
+            recorded_at=request.recorded_at,
+            notes=request.notes
+        )
+        return {
+            "message": "Biomarker data inserted successfully",
+            "biomarker": biomarker_record
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to insert biomarker data: {str(e)}"
+        )
 
 
 @router.get("/dashboard", response_model=BiomarkerDashboardSummary)
@@ -78,7 +108,19 @@ async def get_dashboard_summary(
     - Call biomarker_service.get_latest_biomarker_readings()
     - Return dashboard summary with latest readings and status
     """
-    pass
+    try:
+        user_id = current_user["db_user"]["id"]
+        dashboard_summary = await biomarker_service.get_latest_biomarker_readings(
+            user_id=user_id
+        )
+        return dashboard_summary
+    except HTTPException:
+        raise       
+    except Exception as e:  
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch dashboard summary: {str(e)}"
+        )
 
 
 @router.get("/history/{biomarker_type}", response_model=List[BiomarkerResponse])
@@ -99,7 +141,22 @@ async def get_biomarker_history(
     - Call biomarker_service.get_biomarker_history()
     - Return paginated historical data
     """
-    pass
+    try:
+        user_id = current_user["db_user"]["id"]
+        history = await biomarker_service.get_biomarker_history(
+            user_id=user_id,
+            biomarker_type=biomarker_type,
+            limit=limit,
+            offset=offset
+        )
+        return history
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch biomarker history: {str(e)}"
+        )
 
 
 @router.get("/all", response_model=List[BiomarkerResponse])
@@ -119,7 +176,21 @@ async def get_all_biomarkers(
     - Call biomarker_service.get_all_biomarkers()
     - Return paginated biomarker data
     """
-    pass
+    try:
+        user_id = current_user["db_user"]["id"]
+        all_biomarkers = await biomarker_service.get_all_biomarkers(
+            user_id=user_id,
+            limit=limit,
+            offset=offset
+        )
+        return all_biomarkers
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch all biomarkers: {str(e)}"
+        )
 
 
 # ==================== PROVIDER ENDPOINTS ====================
@@ -139,7 +210,20 @@ async def get_patient_dashboard_for_provider(
     - Call biomarker_service.get_patient_biomarkers_for_provider()
     - Return patient's latest biomarker readings
     """
-    pass
+    try:
+        provider_user_id = current_user["db_user"]["id"]
+        dashboard_summary = await biomarker_service.get_patient_biomarkers_for_provider(
+            provider_user_id=provider_user_id,
+            patient_user_id=patient_user_id
+        )
+        return dashboard_summary
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch patient dashboard: {str(e)}"
+        )
 
 
 @router.get("/patient/{patient_user_id}/history/{biomarker_type}", response_model=List[BiomarkerResponse])
@@ -160,4 +244,18 @@ async def get_patient_biomarker_history_for_provider(
     - Call biomarker_service.get_biomarker_history() with patient_user_id
     - Return patient's historical biomarker data
     """
-    pass
+    try:
+        history = await biomarker_service.get_biomarker_history(
+            user_id=patient_user_id,
+            biomarker_type=biomarker_type,
+            limit=limit,
+            offset=offset
+        )
+        return history
+    except HTTPException:
+        raise   
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch patient biomarker history: {str(e)}"
+        )
