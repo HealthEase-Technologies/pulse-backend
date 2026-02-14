@@ -184,6 +184,13 @@ async def update_patient_profile(
                 for goal in data_dict["health_goals"]
             ]
 
+        # Convert emergency_contacts EmergencyContact objects to dict format if present
+        if "emergency_contacts" in data_dict and data_dict["emergency_contacts"]:
+            data_dict["emergency_contacts"] = [
+                contact if isinstance(contact, dict) else contact.dict()
+                for contact in data_dict["emergency_contacts"]
+            ]
+
         updated_profile = await patient_service.update_patient_profile(
             user_id=user_id,
             update_data=data_dict
