@@ -101,7 +101,26 @@ class BiomarkerService:
                 "notes": notes
             }
             insert_response = supabase_admin.table("biomarkers").insert(insert_data).execute()
-            return insert_response.data[0]
+            biomarker_record = insert_response.data[0]
+
+            # Sprint 7: Real-time alert check (non-blocking)
+            try:
+                from app.services.alert_service import alert_service
+                alert_result = await alert_service.check_and_alert(
+                    patient_user_id=user_id,
+                    biomarker_id=biomarker_record["id"],
+                    biomarker_type=biomarker_type,
+                    value=value,
+                    unit=unit,
+                )
+                biomarker_record["alert_triggered"] = alert_result.get("alert_triggered", False)
+                biomarker_record["alert_type"] = alert_result.get("alert_type")
+            except Exception as alert_err:
+                logger.warning(f"Alert check failed (non-blocking): {alert_err}")
+                biomarker_record["alert_triggered"] = False
+                biomarker_record["alert_type"] = None
+
+            return biomarker_record
         except HTTPException as he:
             raise he
         except Exception as e:
@@ -151,19 +170,43 @@ class BiomarkerService:
                 else:
                     latest_readings[b_type] = None
             # compare with ranges to determine status
-            ranges = ( supabase_admin.table("biomarker_ranges") .select("*") .execute() ).data 
+            ranges = ( supabase_admin.table("biomarker_ranges") .select("*") .execute() ).data
             range_map = {r["biomarker_type"]: r for r in ranges}
+
+            # Sprint 7: Fetch custom thresholds for this user
+            from app.services.threshold_service import threshold_service
+            try:
+                custom_thresholds = await threshold_service.get_effective_thresholds(user_id)
+                custom_map = {t["biomarker_type"]: t for t in custom_thresholds}
+            except Exception:
+                custom_map = {}
+
             def compute_status(b_type, value):
+                # Use custom thresholds if available
+                if b_type in custom_map:
+                    t = custom_map[b_type]
+                    if t.get("critical_low") is not None and value < t["critical_low"]:
+                        return "critical"
+                    if t.get("critical_high") is not None and value > t["critical_high"]:
+                        return "critical"
+                    if t.get("warning_low") is not None and value < t["warning_low"]:
+                        return "warning"
+                    if t.get("warning_high") is not None and value > t["warning_high"]:
+                        return "warning"
+                    # Check optimal from global ranges
+                    if b_type in range_map:
+                        r = range_map[b_type]
+                        if r["min_optimal"] <= value <= r["max_optimal"]:
+                            return "optimal"
+                    return "normal"
+                # Fallback to global ranges
                 if b_type not in range_map:
                     return "unknown"
                 r = range_map[b_type]
-                # Check if value is in critical range
                 if value < r["critical_low"] or value > r["critical_high"]:
                     return "critical"
-                # Check if value is in optimal range
-                elif value >= r["min_optimal"] and value <= r["max_optimal"]:
+                elif r["min_optimal"] <= value <= r["max_optimal"]:
                     return "optimal"
-                # Otherwise it's in normal range
                 else:
                     return "normal"
             dashboard_summary = {}

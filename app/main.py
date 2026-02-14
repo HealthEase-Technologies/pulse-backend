@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
-from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations
+from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations, thresholds, alerts
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.patient_service import PatientService
 from app.services.health_summary_service import health_summary_service
 from app.services.recommendations_service import recommendations_service
+from datetime import datetime, timedelta, timezone
 import logging
 
 # Configure logging
@@ -52,6 +53,9 @@ app.include_router(health_summaries.router, prefix=settings.api_v1_str)
 app.include_router(notes.router, prefix=settings.api_v1_str)
 # AI Recommendations
 app.include_router(recommendations.router, prefix=settings.api_v1_str)
+# Sprint 7 - Thresholds & Alerts
+app.include_router(thresholds.router, prefix=settings.api_v1_str)
+app.include_router(alerts.router, prefix=settings.api_v1_str)
 
 @app.get("/")
 async def root():
@@ -149,6 +153,20 @@ async def generate_daily_recommendations():
         logger.error(f"Error generating daily recommendations: {str(e)}")
 
 
+async def cleanup_alert_cooldowns():
+    """
+    Cron job to clean up expired cooldown records (older than 24 hours).
+    Runs daily at 01:00 UTC.
+    """
+    try:
+        from app.config.database import supabase_admin
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        supabase_admin.table("alert_cooldowns").delete().lt("last_alerted_at", cutoff).execute()
+        logger.info("Cleaned up expired alert cooldowns")
+    except Exception as e:
+        logger.error(f"Error cleaning up cooldowns: {str(e)}")
+
+
 @app.on_event("startup")
 async def startup_event():
     """
@@ -207,6 +225,15 @@ async def startup_event():
             CronTrigger(hour=0, minute=20, timezone="UTC"),
             id="generate_daily_recommendations",
             name="Generate AI recommendations for all users",
+            replace_existing=True
+        )
+
+        # Sprint 7 - Clean up expired alert cooldowns at 01:00 UTC
+        scheduler.add_job(
+            cleanup_alert_cooldowns,
+            CronTrigger(hour=1, minute=0, timezone="UTC"),
+            id="cleanup_alert_cooldowns",
+            name="Clean up expired alert cooldowns",
             replace_existing=True
         )
 
