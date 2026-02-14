@@ -1,8 +1,10 @@
+import random
 from app.config.database import supabase_admin
 from fastapi import HTTPException, status
 from typing import Dict, Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
+from app.schemas.biomarker import BiomarkerType
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +53,63 @@ class BiomarkerService:
         - Insert biomarker data
         - Return created record
         """
-        pass
+        try:
+            if biomarker_type not in [b.value for b in BiomarkerType]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"Invalid biomarker_type '{biomarker_type}'." 
+                )
+            if source == "device":
+                if not device_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="device_id must be provided when source is 'device'."
+                    )
+                # verify device belongs to user
+                device_check = supabase_admin.table("devices").select("id, user_id, status").eq("id", device_id).eq("user_id", user_id).execute()
+                if not device_check.data or len(device_check.data) == 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid device_id or device does not belong to user."
+                    )
+                if device_check.data[0]["status"] != "connected":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Device is not connected."
+                    )
+            else: #source is manual
+                device_id = None  # ensure device_id is None for manual entries
+
+            if not recorded_at:
+                recorded_at = datetime.now(timezone.utc)
+
+            # Convert datetime to ISO string if it's a datetime object
+            if isinstance(recorded_at, datetime):
+                recorded_at_str = recorded_at.isoformat()
+            else:
+                recorded_at_str = recorded_at
+
+            # insert into biomarker table
+            insert_data = {
+                "user_id": user_id,
+                "device_id": device_id,
+                "biomarker_type": biomarker_type,
+                "value": value,
+                "unit": unit,
+                "source": source,
+                "recorded_at": recorded_at_str,
+                "notes": notes
+            }
+            insert_response = supabase_admin.table("biomarkers").insert(insert_data).execute()
+            return insert_response.data[0]
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            logger.exception("Unexpected error inserting biomarker data")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred."
+            )
 
     @staticmethod
     async def get_latest_biomarker_readings(user_id: str) -> Dict:
@@ -77,7 +135,59 @@ class BiomarkerService:
         - Compare with biomarker_ranges to determine status
         - Return dashboard summary with all latest readings
         """
-        pass
+        try:
+            latest_readings = {}
+            biomarker_types = [b.value for b in BiomarkerType]
+            for b_type in biomarker_types:
+                response = supabase_admin.table("biomarkers")\
+                    .select("*")\
+                    .eq("user_id", user_id)\
+                    .eq("biomarker_type", b_type)\
+                    .order("recorded_at", desc=True)\
+                    .limit(1)\
+                    .execute()
+                if response.data:
+                    latest_readings[b_type] = response.data[0]
+                else:
+                    latest_readings[b_type] = None
+            # compare with ranges to determine status
+            ranges = ( supabase_admin.table("biomarker_ranges") .select("*") .execute() ).data 
+            range_map = {r["biomarker_type"]: r for r in ranges}
+            def compute_status(b_type, value):
+                if b_type not in range_map:
+                    return "unknown"
+                r = range_map[b_type]
+                # Check if value is in critical range
+                if value < r["critical_low"] or value > r["critical_high"]:
+                    return "critical"
+                # Check if value is in optimal range
+                elif value >= r["min_optimal"] and value <= r["max_optimal"]:
+                    return "optimal"
+                # Otherwise it's in normal range
+                else:
+                    return "normal"
+            dashboard_summary = {}
+            for b_type, reading in latest_readings.items():
+                if reading:
+                    status = compute_status(b_type, reading["value"])
+                    dashboard_summary[b_type] = {
+                        "biomarker_type": b_type,
+                        "value": reading["value"],
+                        "unit": reading["unit"],
+                        "recorded_at": reading["recorded_at"],
+                        "source": reading["source"],
+                        "status": status
+                    }
+                else:
+                    dashboard_summary[b_type] = None
+            return dashboard_summary
+        except Exception as e:
+            logger.exception("Unexpected error fetching latest biomarker readings")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred."
+            )
+            
 
     @staticmethod
     async def get_biomarker_history(
@@ -104,7 +214,28 @@ class BiomarkerService:
         - Apply limit and offset for pagination
         - Return historical data
         """
-        pass
+        try:
+            if biomarker_type not in [b.value for b in BiomarkerType]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"Invalid biomarker_type '{biomarker_type}'." 
+                )
+            response = supabase_admin.table("biomarkers")\
+                .select("*")\
+                .eq("user_id", user_id)\
+                .eq("biomarker_type", biomarker_type)\
+                .order("recorded_at", desc=True)\
+                .range(offset, offset + limit - 1) \
+                .execute()
+            return response.data
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            logger.exception("Unexpected error fetching biomarker history")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred."
+            )
 
     @staticmethod
     async def get_all_biomarkers(
@@ -129,7 +260,22 @@ class BiomarkerService:
         - Apply limit and offset
         - Return all biomarker data
         """
-        pass
+        try:
+            response = supabase_admin.table("biomarkers")\
+                .select("*")\
+                .eq("user_id", user_id)\
+                .order("recorded_at", desc=True)\
+                .range(offset, offset + limit - 1) \
+                .execute()
+            return response.data
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            logger.exception("Unexpected error fetching all biomarkers")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred."
+            )   
 
     @staticmethod
     async def get_biomarker_ranges() -> List[Dict]:
@@ -143,7 +289,15 @@ class BiomarkerService:
         - Query biomarker_ranges table
         - Return all reference ranges
         """
-        pass
+        try:
+            response = supabase_admin.table("biomarker_ranges").select("*").execute()
+            return response.data
+        except Exception as e:
+            logger.exception("Unexpected error fetching biomarker ranges")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred."
+            )   
 
     @staticmethod
     async def get_patient_biomarkers_for_provider(
@@ -167,7 +321,53 @@ class BiomarkerService:
         - Get latest biomarker readings for patient
         - Return dashboard summary
         """
-        pass
+        try:
+            # Get provider's profile_id
+            provider_profile = supabase_admin.table("providers")\
+                .select("id")\
+                .eq("user_id", provider_user_id)\
+                .execute()
+            if not provider_profile.data or len(provider_profile.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Provider profile not found."
+                )
+            provider_profile_id = provider_profile.data[0]["id"]
+
+            # Get patient's profile_id
+            patient_profile = supabase_admin.table("patients")\
+                .select("id")\
+                .eq("user_id", patient_user_id)\
+                .execute()
+            if not patient_profile.data or len(patient_profile.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Patient profile not found."
+                )
+            patient_profile_id = patient_profile.data[0]["id"]
+
+            # verify connection using profile IDs
+            connection_check = supabase_admin.table("patient_provider_connections")\
+                .select("status")\
+                .eq("provider_id", provider_profile_id)\
+                .eq("patient_id", patient_profile_id)\
+                .execute()
+            if not connection_check.data or len(connection_check.data) == 0 or connection_check.data[0]["status"] != "accepted":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No accepted connection with the patient."
+                )
+            # get patient's latest biomarker readings
+            patient_biomarkers = await BiomarkerService.get_latest_biomarker_readings(patient_user_id)
+            return patient_biomarkers
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            logger.exception("Unexpected error fetching patient biomarkers for provider")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred."
+            )
 
     @staticmethod
     async def simulate_device_data(
@@ -233,7 +433,72 @@ class BiomarkerService:
           * Insert into biomarkers table with source='device'
         - Return summary of generated data
         """
-        pass
+        try:
+            # Fetch supported biomarkers for device type
+            device_type_response = supabase_admin.table("device_types")\
+                .select("supported_biomarkers")\
+                .eq("device_type", device_type)\
+                .execute()
+            if not device_type_response.data or len(device_type_response.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid device_type."
+                )
+            supported_biomarkers = device_type_response.data[0]["supported_biomarkers"]
+            total_readings = 0
+            biomarkers_generated = set()
+            end_date = datetime.now(timezone.utc)
+            start_date = end_date - timedelta(days=days_of_history)
+            for day_offset in range(days_of_history):
+                current_date = start_date + timedelta(days=day_offset)
+                for biomarker in supported_biomarkers:
+                    # Generate random number of readings per biomarker type
+                    if biomarker == "heart_rate":
+                        num_readings = random.randint(3, 5)
+                    elif biomarker in ["blood_pressure_systolic", "blood_pressure_diastolic"]:
+                        num_readings = random.randint(2, 3)
+                    elif biomarker == "glucose":
+                        num_readings = random.randint(8, 12)
+                    elif biomarker == "steps":
+                        num_readings = 1
+                    elif biomarker == "sleep":
+                        num_readings = 1
+                    else:
+                        num_readings = 1
+                    
+                    for _ in range(num_readings):
+                        value = await BiomarkerService.generate_random_biomarker_value(biomarker)
+                        recorded_at = current_date + timedelta(
+                            hours=random.randint(0, 23),
+                            minutes=random.randint(0, 59),
+                            seconds=random.randint(0, 59)
+                        )
+                        insert_data = {
+                            "user_id": user_id,
+                            "device_id": device_id,
+                            "biomarker_type": biomarker,
+                            "value": value,
+                            "unit": BiomarkerService.get_unit_for_biomarker(biomarker),
+                            "source": "device",
+                            "recorded_at": recorded_at.isoformat(),
+                            "notes": None
+                        }
+                        supabase_admin.table("biomarkers").insert(insert_data).execute()
+                        total_readings += 1
+                        biomarkers_generated.add(biomarker)
+            return {
+                "total_readings": total_readings,
+                "biomarkers_generated": list(biomarkers_generated),
+                "date_range": {"start": start_date.isoformat(), "end": end_date.isoformat()}
+            }
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            logger.exception("Unexpected error simulating device data")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred."
+            )
 
     @staticmethod
     async def generate_random_biomarker_value(biomarker_type: str) -> float:
@@ -254,7 +519,49 @@ class BiomarkerService:
         - Add slight variation (+/- 10%) for realism
         - Return the generated value
         """
-        pass
+        try:
+            range_response = supabase_admin.table("biomarker_ranges")\
+                .select("*")\
+                .eq("biomarker_type", biomarker_type)\
+                .execute()
+            if not range_response.data or len(range_response.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid biomarker_type for value generation."
+                )
+            r = range_response.data[0]
+            base_value = random.uniform(r["min_optimal"], r["max_optimal"])
+            variation = base_value * random.uniform(-0.1, 0.1)  # +/- 10%
+            return round(base_value + variation, 2)
+        except HTTPException as he:
+            raise he    
+        except Exception as e:
+            logger.exception("Unexpected error generating random biomarker value")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred."
+            )
+
+    @staticmethod
+    def get_unit_for_biomarker(biomarker_type: str) -> str:
+        """
+        Get the standard unit for a given biomarker type
+
+        Args:
+            biomarker_type: The type of biomarker
+
+        Returns:
+            The unit string for the biomarker
+        """
+        units_map = {
+            "heart_rate": "bpm",
+            "blood_pressure_systolic": "mmHg",
+            "blood_pressure_diastolic": "mmHg",
+            "glucose": "mg/dL",
+            "steps": "steps",
+            "sleep": "hours"
+        }
+        return units_map.get(biomarker_type, "unit")
 
 
 # Create singleton instance

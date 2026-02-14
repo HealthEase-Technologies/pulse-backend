@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     email_password: str
     smtp_server: str
     smtp_port: int
-    
+    gemini_api_key: str
+
     class Config:
         env_file = ".env"
 

@@ -319,6 +319,7 @@ class ConnectionService:
                         today = date.today()
                         age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
+                    connection["patient_user_id"] = patient["user_id"]
                     connection["patient_name"] = patient["full_name"]
                     connection["patient_email"] = user_result.data[0]["email"] if user_result.data else None
                     connection["patient_age"] = age

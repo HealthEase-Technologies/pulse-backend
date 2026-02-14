@@ -1,0 +1,292 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from app.auth.dependencies import get_current_provider, get_current_patient
+from app.services.note_service import note_service
+from app.schemas.note import (
+    NoteCreate,
+    NoteUpdate,
+    NoteResponse,
+    MarkNoteAsReadRequest
+)
+from typing import Dict, List
+
+router = APIRouter(prefix="/notes", tags=["notes"])
+
+
+# ==================== PATIENT ENDPOINTS ====================
+
+@router.get("/my-notes", response_model=List[NoteResponse])
+async def get_my_notes(
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of notes"),
+    offset: int = Query(0, ge=0, description="Number of notes to skip"),
+    current_user: Dict = Depends(get_current_patient)
+):
+    """
+    Get all notes written about the current patient by their healthcare provider
+
+    Business Rules:
+    - Patient can only view notes about themselves
+    - Shows notes from their connected provider
+    - Notes are ordered by created_at DESC (most recent first)
+
+    Requirements: Sprint 5.3 - Patient View Notes API
+
+    TODO: Implement this endpoint
+    - Get patient_user_id from current_user
+    - Call note_service.get_my_notes()
+    - Return list of notes
+    """
+    # 1. Get the patient's ID from the login session (current_user)
+    patient_user_id = current_user["db_user"]["id"]
+    
+    # 2. Ask the NoteService to fetch the notes from the database
+    notes = await note_service.get_my_notes(
+        patient_user_id=patient_user_id,
+        limit=limit,
+        offset=offset
+    )
+    
+    # 3. Send the notes back to the patient's screen
+    return notes
+
+
+@router.patch("/{note_id}/mark-read", response_model=NoteResponse)
+async def mark_note_as_read(
+    note_id: str,
+    current_user: Dict = Depends(get_current_patient)
+):
+    """
+    Mark a note as read by the patient
+
+    Business Rules:
+    - Patient can only mark their own notes as read
+    - Sets is_read to True and records read_at timestamp
+    - Can be toggled back to unread if needed
+
+    Requirements: Sprint 5.3 - Mark Note As Read API
+
+    TODO: Implement this endpoint
+    - Get patient_user_id from current_user
+    - Call note_service.mark_note_as_read()
+    - Return updated note
+    """
+    # 1. Extract the patient's user ID from the current_user dictionary
+    patient_user_id = current_user["db_user"]["id"]
+    
+    # 2. Call the service method to update the database
+    updated_note = await note_service.mark_note_as_read(
+        patient_user_id=patient_user_id,
+        note_id=note_id
+    )
+    
+    # 3. Return the updated note record
+    return updated_note
+
+
+# ==================== HCP NOTES ENDPOINTS ====================
+
+@router.get("/", response_model=List[NoteResponse])
+async def get_all_my_notes(
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of notes"),
+    offset: int = Query(0, ge=0, description="Number of notes to skip"),
+    current_user: Dict = Depends(get_current_provider)
+):
+    """
+    Get all notes created by the current provider (across all patients)
+
+    Business Rules:
+    - Provider can view all notes they created
+    - Notes are ordered by created_at DESC (most recent first)
+    - Supports pagination
+
+    Requirements: Sprint 5.3 - Get All Provider Notes API
+
+    TODO: Implement this endpoint
+    - Get provider_user_id from current_user
+    - Call note_service.get_all_provider_notes()
+    - Return list of all notes by this provider
+    """
+    # 1. Extract the provider's user ID from the login dict
+    provider_user_id = current_user["db_user"]["id"]
+    
+    # 2. Call the service to get the list of notes
+    notes = await note_service.get_all_provider_notes(
+        provider_user_id=provider_user_id,
+        limit=limit,
+        offset=offset
+    )
+    
+    # 3. Return the list of notes
+    return notes
+
+
+@router.post("/", response_model=NoteResponse)
+async def create_note(
+    request: NoteCreate,
+current_user: Dict = Depends(get_current_provider)  
+):
+    """
+
+    Create a new note for a patient
+
+    Business Rules:
+    - Only providers can create notes
+    - Provider must have an accepted connection with the patient
+    - Content cannot be empty
+
+    Requirements: Sprint 5.3 - Add Note API
+
+    TODO: Implement this endpoint
+    - Get provider_user_id from current_user
+    - Validate patient_id exists
+    - Call note_service.create_note()
+    - Return created note
+    """
+    # 1. Get the doctor's ID from the session
+    provider_user_id = current_user["db_user"]["id"]
+
+    # 2. Tell the service to create the note
+    # We pull patient_id and content from the 'request' object
+    new_note = await note_service.create_note(
+        provider_user_id=provider_user_id,
+        patient_user_id=request.patient_id,
+        content=request.content
+    )
+    
+    # 3. Return the newly created note
+    return new_note
+
+
+@router.get("/patient/{patient_user_id}", response_model=List[NoteResponse])
+async def get_patient_notes(
+    patient_user_id: str,
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of notes"),
+    offset: int = Query(0, ge=0, description="Number of notes to skip"),
+    current_user: Dict = Depends(get_current_provider)
+):
+    """
+    Get all notes for a specific patient
+
+    Business Rules:
+    - Only providers can view notes
+    - Provider must have an accepted connection with the patient
+    - Notes are ordered by created_at DESC (most recent first)
+
+    Requirements: Sprint 5.3 - Get Patient Notes API
+
+    TODO: Implement this endpoint
+    - Get provider_user_id from current_user
+    - Call note_service.get_patient_notes()
+    - Return list of notes
+    """
+    # 1. Extract the doctor's ID from the session
+    provider_user_id = current_user["db_user"]["id"]
+
+    # 2. Call the service to fetch notes for this specific patient
+    # This will check for a valid connection automatically
+    notes = await note_service.get_patient_notes(
+        provider_user_id=provider_user_id,
+        patient_user_id=patient_user_id,
+        limit=limit,
+        offset=offset
+    )
+    
+    # 3. Return the notes to the provider
+    return notes
+
+
+@router.get("/{note_id}", response_model=NoteResponse)
+async def get_note(
+    note_id: str,
+    current_user: Dict = Depends(get_current_provider)
+):
+    """
+    Get a specific note by ID
+
+    Business Rules:
+    - Provider can only view notes they created
+
+    TODO: Implement this endpoint
+    - Get provider_user_id from current_user
+    - Call note_service.get_note_by_id()
+    - Return note
+    """
+    # 1. Get the doctor's ID from the session
+    provider_user_id = current_user["db_user"]["id"]
+
+    # 2. Call the service to find this specific note
+    # The service will check if the provider is the owner
+    note = await note_service.get_note_by_id(
+        provider_user_id=provider_user_id,
+        note_id=note_id
+    )
+    
+    # 3. Return the note details
+    return note
+
+
+@router.put("/{note_id}", response_model=NoteResponse)
+async def update_note(
+    note_id: str,
+    request: NoteUpdate,
+    current_user: Dict = Depends(get_current_provider)
+):
+    """
+    Update an existing note
+
+    Business Rules:
+    - Provider can only update notes they created
+    - Content cannot be empty
+
+    Requirements: Sprint 5.3 - Update Note API
+
+    TODO: Implement this endpoint
+    - Get provider_user_id from current_user
+    - Call note_service.update_note()
+    - Return updated note
+    """
+    # 1. Get the provider's ID from the session
+    provider_user_id = current_user["db_user"]["id"]
+
+    # 2. Call the service to update the content
+    # We pass the note_id from the URL and content from the request body
+    updated_note = await note_service.update_note(
+        provider_user_id=provider_user_id,
+        note_id=note_id,
+        content=request.content
+    )
+    
+    # 3. Return the modified note
+    return updated_note
+
+
+@router.delete("/{note_id}")
+async def delete_note(
+    note_id: str,
+    current_user: Dict = Depends(get_current_provider)
+):
+    """
+    Delete a note
+
+    Business Rules:
+    - Provider can only delete notes they created
+    - Deletion is permanent
+
+    Requirements: Sprint 5.3 - Delete Note API
+
+    TODO: Implement this endpoint
+    - Get provider_user_id from current_user
+    - Call note_service.delete_note()
+    - Return success message
+    """
+    # 1. Get the provider's ID from the session
+    provider_user_id = current_user["db_user"]["id"]
+
+    # 2. Call the service to perform the deletion
+    # The service handles the ownership check and the database operation
+    result = await note_service.delete_note(
+        provider_user_id=provider_user_id,
+        note_id=note_id
+    )
+    
+    # 3. Return the success message (e.g., {"message": "Note deleted successfully"})
+    return result

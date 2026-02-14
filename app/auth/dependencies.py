@@ -25,7 +25,7 @@ async def get_current_user(
         if not complete_user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found in database"
+                detail="User not found in database. Please complete registration by calling POST /api/v1/users/register"
             )
 
         return {
