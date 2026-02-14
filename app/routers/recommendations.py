@@ -11,7 +11,8 @@ from app.schemas.recommendations import (
     FeedbackRequest,
     GenerateRecommendationsRequest,
     GenerateRecommendationsResponse,
-    RecommendationStatus
+    RecommendationStatus,
+    UpdateProgressRequest
 )
 from typing import Dict, List, Optional
 from datetime import date
@@ -271,6 +272,113 @@ async def dismiss_recommendation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to dismiss recommendation: {str(e)}"
+        )
+
+
+# =============================================================================
+# INTERACTIVE ACTION ENDPOINTS
+# =============================================================================
+
+@router.patch("/{recommendation_id}/start", response_model=RecommendationResponse)
+async def start_recommendation(
+    recommendation_id: str,
+    current_user: Dict = Depends(get_current_patient)
+):
+    """
+    Start working on a recommendation.
+    Sets status to in_progress and initializes progress tracking.
+    """
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        updated = await recommendations_service.start_recommendation(
+            recommendation_id=recommendation_id,
+            user_id=patient_user_id
+        )
+        return enrich_recommendation(updated)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start recommendation: {str(e)}"
+        )
+
+
+@router.patch("/{recommendation_id}/progress", response_model=RecommendationResponse)
+async def update_progress(
+    recommendation_id: str,
+    request: UpdateProgressRequest,
+    current_user: Dict = Depends(get_current_patient)
+):
+    """
+    Update progress percentage for a recommendation.
+    Auto-completes if progress reaches 100%.
+    """
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        updated = await recommendations_service.update_progress(
+            recommendation_id=recommendation_id,
+            user_id=patient_user_id,
+            progress_percentage=request.progress_percentage
+        )
+        return enrich_recommendation(updated)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update progress: {str(e)}"
+        )
+
+
+@router.patch("/{recommendation_id}/action-steps/{step_number}/toggle", response_model=RecommendationResponse)
+async def toggle_action_step(
+    recommendation_id: str,
+    step_number: int,
+    current_user: Dict = Depends(get_current_patient)
+):
+    """
+    Toggle an action step's completed status.
+    Automatically recalculates progress percentage based on completed steps.
+    """
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        updated = await recommendations_service.toggle_action_step(
+            recommendation_id=recommendation_id,
+            user_id=patient_user_id,
+            step_number=step_number
+        )
+        return enrich_recommendation(updated)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle action step: {str(e)}"
+        )
+
+
+@router.patch("/{recommendation_id}/complete", response_model=RecommendationResponse)
+async def complete_recommendation(
+    recommendation_id: str,
+    current_user: Dict = Depends(get_current_patient)
+):
+    """
+    Mark a recommendation as completed with 100% progress.
+    """
+    try:
+        patient_user_id = current_user["db_user"]["id"]
+        updated = await recommendations_service.complete_recommendation(
+            recommendation_id=recommendation_id,
+            user_id=patient_user_id
+        )
+        return enrich_recommendation(updated)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to complete recommendation: {str(e)}"
         )
 
 

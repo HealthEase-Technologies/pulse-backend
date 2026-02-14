@@ -697,6 +697,258 @@ class RecommendationsService:
             )
 
     # =========================================================================
+    # INTERACTIVE ACTIONS
+    # =========================================================================
+    @staticmethod
+    async def start_recommendation(
+        recommendation_id: str,
+        user_id: str
+    ) -> Dict:
+        """
+        Start working on a recommendation - sets status to in_progress.
+        """
+        try:
+            existing_response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not existing_response.data or len(existing_response.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Recommendation not found"
+                )
+
+            # Initialize action_steps with completed=false if they don't have it
+            action_steps = existing_response.data[0].get("action_steps") or []
+            for step in action_steps:
+                if "completed" not in step:
+                    step["completed"] = False
+
+            response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .update({
+                    "status": "in_progress",
+                    "progress_percentage": 0,
+                    "action_steps": action_steps,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            return response.data[0] if response.data else existing_response.data[0]
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error starting recommendation {recommendation_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to start recommendation"
+            )
+
+    @staticmethod
+    async def update_progress(
+        recommendation_id: str,
+        user_id: str,
+        progress_percentage: int
+    ) -> Dict:
+        """
+        Update progress percentage for a recommendation.
+        Auto-completes if progress reaches 100.
+        """
+        try:
+            existing_response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not existing_response.data or len(existing_response.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Recommendation not found"
+                )
+
+            update_data = {
+                "progress_percentage": progress_percentage,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+
+            # Auto-complete at 100%
+            if progress_percentage >= 100:
+                update_data["status"] = "completed"
+                update_data["progress_percentage"] = 100
+            elif existing_response.data[0].get("status") == "active":
+                update_data["status"] = "in_progress"
+
+            response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .update(update_data)
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            return response.data[0] if response.data else existing_response.data[0]
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating progress for recommendation {recommendation_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update progress"
+            )
+
+    @staticmethod
+    async def toggle_action_step(
+        recommendation_id: str,
+        user_id: str,
+        step_number: int
+    ) -> Dict:
+        """
+        Toggle an action step's completed status.
+        Recalculates progress_percentage based on completed steps ratio.
+        """
+        try:
+            existing_response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not existing_response.data or len(existing_response.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Recommendation not found"
+                )
+
+            rec = existing_response.data[0]
+            action_steps = rec.get("action_steps") or []
+
+            if not action_steps:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This recommendation has no action steps"
+                )
+
+            # Find and toggle the step
+            step_found = False
+            for step in action_steps:
+                if step.get("step_number") == step_number:
+                    step["completed"] = not step.get("completed", False)
+                    step_found = True
+                    break
+
+            if not step_found:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Action step {step_number} not found"
+                )
+
+            # Recalculate progress from steps
+            total_steps = len(action_steps)
+            completed_steps = sum(1 for s in action_steps if s.get("completed", False))
+            progress = int((completed_steps / total_steps) * 100)
+
+            update_data = {
+                "action_steps": action_steps,
+                "progress_percentage": progress,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+
+            # Auto-update status based on progress
+            if progress >= 100:
+                update_data["status"] = "completed"
+            elif progress > 0 and rec.get("status") == "active":
+                update_data["status"] = "in_progress"
+
+            response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .update(update_data)
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            return response.data[0] if response.data else existing_response.data[0]
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error toggling action step for recommendation {recommendation_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to toggle action step"
+            )
+
+    @staticmethod
+    async def complete_recommendation(
+        recommendation_id: str,
+        user_id: str
+    ) -> Dict:
+        """
+        Mark a recommendation as completed with 100% progress.
+        """
+        try:
+            existing_response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .select("*")
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            if not existing_response.data or len(existing_response.data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Recommendation not found"
+                )
+
+            # Mark all action steps as completed
+            action_steps = existing_response.data[0].get("action_steps") or []
+            for step in action_steps:
+                step["completed"] = True
+
+            response = (
+                supabase_admin
+                .table("ai_recommendations")
+                .update({
+                    "status": "completed",
+                    "progress_percentage": 100,
+                    "action_steps": action_steps,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })
+                .eq("id", recommendation_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+
+            return response.data[0] if response.data else existing_response.data[0]
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error completing recommendation {recommendation_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to complete recommendation"
+            )
+
+    # =========================================================================
     # PROVIDER ACCESS
     # =========================================================================
     @staticmethod

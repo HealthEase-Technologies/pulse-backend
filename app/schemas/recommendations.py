@@ -177,6 +177,11 @@ class UpdateStatusRequest(BaseModel):
     )
 
 
+class UpdateProgressRequest(BaseModel):
+    """Request schema for updating recommendation progress"""
+    progress_percentage: int = Field(..., ge=0, le=100, description="Progress percentage (0-100)")
+
+
 # =============================================================================
 # RESPONSE SCHEMAS
 # =============================================================================
@@ -197,6 +202,7 @@ class ActionStep(BaseModel):
     step_number: int
     instruction: str
     tip: Optional[str] = None
+    completed: bool = False
 
 
 class RecommendationResponse(BaseModel):

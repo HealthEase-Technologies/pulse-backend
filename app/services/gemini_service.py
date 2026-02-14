@@ -19,6 +19,7 @@ class AIActionStep(BaseModel):
     step_number: int = Field(description="Step number starting from 1")
     instruction: str = Field(description="Clear, actionable instruction for this step")
     tip: Optional[str] = Field(None, description="Optional helpful tip for this step")
+    completed: bool = Field(default=False, description="Whether this step has been completed")
 
 
 class AIRelatedMetric(BaseModel):
