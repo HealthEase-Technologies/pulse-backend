@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     smtp_port: int
     gemini_api_key: str
 
+    # Sprint 7 - Alerts & Notifications
+    twilio_account_sid: Optional[str] = None
+    twilio_auth_token: Optional[str] = None
+    twilio_whatsapp_from: str = "whatsapp:+14155238886"  # Twilio sandbox number
+    whatsapp_enabled: bool = False
+    alert_cooldown_warning_minutes: int = 30
+    alert_cooldown_critical_minutes: int = 15
+
     class Config:
         env_file = ".env"
 
