@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
-from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations, thresholds, alerts
+from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations, thresholds, alerts, chat
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.patient_service import PatientService
@@ -56,6 +56,8 @@ app.include_router(recommendations.router, prefix=settings.api_v1_str)
 # Sprint 7 - Thresholds & Alerts
 app.include_router(thresholds.router, prefix=settings.api_v1_str)
 app.include_router(alerts.router, prefix=settings.api_v1_str)
+# Sprint 9 - AI Chatbot
+app.include_router(chat.router, prefix=settings.api_v1_str)
 
 @app.get("/")
 async def root():
