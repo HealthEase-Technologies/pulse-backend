@@ -41,7 +41,7 @@ class DeviceTypeInfo(BaseModel):
                 "manufacturer": "Apple",
                 "supported_biomarkers": ["heart_rate", "steps", "sleep"],
                 "description": "Comprehensive health and fitness tracking",
-                "icon_url": "https://pulse-so-public-assets.s3.me-central-1.amazonaws.com/device-icons/apple_watch.jpg",
+                "icon_url": "https://pulse-hw-public-assets.s3.me-central-1.amazonaws.com/device-icons/apple_watch.jpg",
                 "is_active": True,
                 "created_at": "2024-01-15T10:00:00Z",
                 "updated_at": "2024-01-15T10:00:00Z"
@@ -113,7 +113,7 @@ class DeviceWithTypeInfo(DeviceResponse):
                 "display_name": "Apple Watch",
                 "manufacturer": "Apple",
                 "supported_biomarkers": ["heart_rate", "steps", "sleep"],
-                "icon_url": "https://pulse-so-public-assets.s3.me-central-1.amazonaws.com/device-icons/apple_watch.jpg"
+                "icon_url": "https://pulse-hw-public-assets.s3.me-central-1.amazonaws.com/device-icons/apple_watch.jpg"
             }
         }
 
