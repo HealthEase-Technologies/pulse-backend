@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
-from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations, thresholds, alerts, chat
+from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations, thresholds, alerts, chat, pets
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.patient_service import PatientService
@@ -58,6 +58,8 @@ app.include_router(thresholds.router, prefix=settings.api_v1_str)
 app.include_router(alerts.router, prefix=settings.api_v1_str)
 # Sprint 9 - AI Chatbot
 app.include_router(chat.router, prefix=settings.api_v1_str)
+# Sprint 8 - Pet & Health Score
+app.include_router(pets.router, prefix=settings.api_v1_str)
 
 @app.get("/")
 async def root():
@@ -155,6 +157,20 @@ async def generate_daily_recommendations():
         logger.error(f"Error generating daily recommendations: {str(e)}")
 
 
+async def recalculate_health_scores():
+    """
+    Cron job to recalculate daily health scores for all patients and reset pet states.
+    Runs daily at 00:25 UTC (after morning briefing and recommendations).
+    """
+    try:
+        from app.services.pet_service import PetService
+        logger.info("Starting daily health score recalculation...")
+        result = await PetService.recalculate_all_scores()
+        logger.info(f"Health score recalculation completed: {result}")
+    except Exception as e:
+        logger.error(f"Error recalculating health scores: {str(e)}")
+
+
 async def cleanup_alert_cooldowns():
     """
     Cron job to clean up expired cooldown records (older than 24 hours).
@@ -227,6 +243,15 @@ async def startup_event():
             CronTrigger(hour=0, minute=20, timezone="UTC"),
             id="generate_daily_recommendations",
             name="Generate AI recommendations for all users",
+            replace_existing=True
+        )
+
+        # Sprint 8 - Recalculate health scores and reset pet states at 00:25 UTC
+        scheduler.add_job(
+            recalculate_health_scores,
+            CronTrigger(hour=0, minute=25, timezone="UTC"),
+            id="recalculate_health_scores",
+            name="Recalculate daily health scores for all patients",
             replace_existing=True
         )
 
