@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_key: str
     supabase_service_key: str
-    aws_region: str = "me-central-1"
+    aws_region: str = "us-east-1"
     cognito_user_pool_id: str
     cognito_client_id: str
     aws_access_key_id: str

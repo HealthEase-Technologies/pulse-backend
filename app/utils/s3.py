@@ -7,18 +7,12 @@ import mimetypes
 
 class S3Service:
     def __init__(self):
-        # Configure S3 client with explicit endpoint for Middle East region
-        client_config = {
-            'aws_access_key_id': settings.aws_access_key_id,
-            'aws_secret_access_key': settings.aws_secret_access_key,
-            'region_name': settings.aws_region
-        }
-
-        # For me-central-1, use explicit endpoint URL
-        if settings.aws_region == 'me-central-1':
-            client_config['endpoint_url'] = f'https://s3.{settings.aws_region}.amazonaws.com'
-
-        self.s3_client = boto3.client('s3', **client_config)
+        self.s3_client = boto3.client(
+            's3',
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
+            region_name=settings.aws_region
+        )
         self.bucket_name = settings.s3_bucket_name
 
     async def upload_file(
@@ -60,8 +54,6 @@ class S3Service:
                 ContentType=content_type
             )
 
-            # Generate file URL with correct region
-            # For most regions including me-central-1
             file_url = f"https://{self.bucket_name}.s3.{settings.aws_region}.amazonaws.com/{s3_key}"
 
             return {
@@ -104,8 +96,6 @@ class S3Service:
             Presigned URL string
         """
         try:
-            # Use the same client configuration as initialized
-            # This ensures me-central-1 uses the correct endpoint
             url = self.s3_client.generate_presigned_url(
                 'get_object',
                 Params={

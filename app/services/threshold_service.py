@@ -75,8 +75,8 @@ class ThresholdService:
                     g = global_map[bt]
                     effective.append({
                         "biomarker_type": bt,
-                        "warning_low": g.get("min_normal"),
-                        "warning_high": g.get("max_normal"),
+                        "warning_low": g.get("min_optimal"),
+                        "warning_high": g.get("max_optimal"),
                         "critical_low": g.get("critical_low"),
                         "critical_high": g.get("critical_high"),
                         "source": "global"
