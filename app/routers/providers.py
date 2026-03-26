@@ -106,13 +106,31 @@ async def get_provider_profile(
         updated_at = provider_data.get("updated_at")
 
         # Handle different datetime formats
+        def _parse_dt(dt_str):
+            dt_str = dt_str.replace('Z', '+00:00')
+            try:
+                return datetime.fromisoformat(dt_str)
+            except ValueError:
+                # Normalize non-standard fractional seconds (e.g. 5 digits) to 6
+                if "." in dt_str:
+                    for sep in ("+", "-"):
+                        if sep in dt_str[10:]:
+                            base, tz = dt_str[10:].rsplit(sep, 1)
+                            prefix = dt_str[:10]
+                            if "." in base:
+                                time_part, micro = base.rsplit(".", 1)
+                                micro = micro[:6].ljust(6, "0")
+                                dt_str = f"{prefix}{time_part}.{micro}{sep}{tz}"
+                                break
+                return datetime.fromisoformat(dt_str)
+
         if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            created_at = _parse_dt(created_at)
         elif not isinstance(created_at, datetime):
             created_at = datetime.now(timezone.utc)
 
         if isinstance(updated_at, str):
-            updated_at = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+            updated_at = _parse_dt(updated_at)
         elif not isinstance(updated_at, datetime):
             updated_at = datetime.now(timezone.utc)
 

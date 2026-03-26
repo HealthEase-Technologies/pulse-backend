@@ -601,6 +601,11 @@ class BiomarkerService:
             "blood_pressure_systolic": "mmHg",
             "blood_pressure_diastolic": "mmHg",
             "glucose": "mg/dL",
+            "blood_glucose": "mg/dL",
+            "calories": "kcal",
+            "blood_oxygen": "%",
+            "hrv": "ms",
+            "strain": "AU",
             "steps": "steps",
             "sleep": "hours"
         }
