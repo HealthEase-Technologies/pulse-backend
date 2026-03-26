@@ -414,7 +414,7 @@ class RecommendationsService:
                 response.data,
                 key=lambda x: (
                     priority_order.get(x.get("priority"), 3),  # priority ASC
-                    -datetime.fromisoformat(x["created_at"]).timestamp()  # created_at DESC
+                    -(_parse_datetime(x["created_at"]) or datetime.min.replace(tzinfo=timezone.utc)).timestamp()  # created_at DESC
                 )
             )
 
