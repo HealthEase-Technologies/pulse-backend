@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Pulse Health Report</title>
+<style>
+/* ─────────────────────────────────────────────────────
+   BASE
+───────────────────────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 9.5pt;
+  color: #1a1a2e;
+  background: #fff;
+  line-height: 1.55;
+}
+
+@page {
+  size: A4;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────
+   FULL-PAGE HEADER COVER
+───────────────────────────────────────────────────── */
+.cover-page {
+  background-color: #0f3460;
+  padding: 40px 48px 32px 48px;
+  margin-bottom: 0;
+}
+
+.cover-top-row { width: 100%; margin-bottom: 28px; }
+.cover-top-row td { vertical-align: middle; }
+.cover-logo-mark {
+  display: inline-block;
+  width: 14px; height: 14px;
+  background-color: #4fc3f7;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.cover-brand {
+  font-size: 14pt;
+  font-weight: bold;
+  color: #e0f2fe;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+.cover-report-type {
+  font-size: 9pt;
+  color: #90caf9;
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.cover-title {
+  font-size: 32pt;
+  font-weight: bold;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+.cover-subtitle {
+  font-size: 11pt;
+  color: #93c5fd;
+  margin-bottom: 28px;
+}
+
+.cover-divider {
+  border: none;
+  border-top: 1px solid #1e4080;
+  margin: 20px 0;
+}
+
+.cover-meta-table { width: 100%; }
+.cover-meta-table td {
+  color: #cbd5e1;
+  font-size: 10pt;
+  padding: 0 0 0 0;
+  padding-right: 40px;
+  vertical-align: top;
+}
+.cover-meta-key {
+  display: block;
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #64b5f6;
+  margin-bottom: 3px;
+  font-weight: bold;
+}
+.cover-meta-val {
+  font-size: 11pt;
+  color: #f0f9ff;
+  font-weight: bold;
+}
+
+/* ─────────────────────────────────────────────────────
+   CONTENT WRAPPER
+───────────────────────────────────────────────────── */
+.content {
+  padding: 28px 44px 20px 44px;
+}
+
+/* ─────────────────────────────────────────────────────
+   SECTION HEADERS
+───────────────────────────────────────────────────── */
+.section-title {
+  font-size: 8pt;
+  font-weight: bold;
+  color: #0f3460;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid #0f3460;
+  margin-top: 22px;
+  margin-bottom: 14px;
+}
+
+/* ─────────────────────────────────────────────────────
+   SUMMARY METRIC CARDS
+───────────────────────────────────────────────────── */
+.metric-table { width: 100%; border-collapse: separate; border-spacing: 10px 0; }
+.metric-cell {
+  border-top: 3px solid #0f3460;
+  background-color: #f8faff;
+  padding: 12px 16px 10px;
+  vertical-align: top;
+  width: 25%;
+}
+.metric-cell-green  { border-top-color: #15803d; background-color: #f0fdf4; }
+.metric-cell-amber  { border-top-color: #b45309; background-color: #fffbeb; }
+.metric-cell-red    { border-top-color: #b91c1c; background-color: #fff5f5; }
+.metric-cell-blue   { border-top-color: #0369a1; background-color: #f0f9ff; }
+
+.metric-label {
+  font-size: 7pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.metric-value {
+  font-size: 28pt;
+  font-weight: bold;
+  color: #0f172a;
+  line-height: 1;
+}
+.metric-unit { font-size: 9pt; color: #94a3b8; font-weight: normal; }
+.metric-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 7.5pt;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.badge-green  { background-color: #dcfce7; color: #15803d; }
+.badge-amber  { background-color: #fef3c7; color: #92400e; }
+.badge-red    { background-color: #fee2e2; color: #991b1b; }
+.badge-blue   { background-color: #dbeafe; color: #1e40af; }
+.badge-gray   { background-color: #f1f5f9; color: #475569; }
+
+/* ─────────────────────────────────────────────────────
+   SCORE CHART
+───────────────────────────────────────────────────── */
+.score-chart-box {
+  border: 1px solid #e2e8f0;
+  background-color: #f8faff;
+  padding: 10px;
+  margin-top: 14px;
+  margin-bottom: 4px;
+}
+.score-chart-box img { width: 100%; display: block; }
+
+/* ─────────────────────────────────────────────────────
+   INSIGHTS PANEL
+───────────────────────────────────────────────────── */
+.insight-panel {
+  border-left: 4px solid #0f3460;
+  background-color: #f8faff;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+.insight-panel-title {
+  font-size: 7.5pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #0f3460;
+  margin-bottom: 8px;
+}
+.insight-row { margin-bottom: 5px; }
+.insight-bullet-green { color: #15803d; font-weight: bold; font-size: 11pt; vertical-align: middle; }
+.insight-bullet-amber { color: #d97706; font-weight: bold; font-size: 11pt; vertical-align: middle; }
+.insight-bullet-red   { color: #dc2626; font-weight: bold; font-size: 11pt; vertical-align: middle; }
+.insight-text { font-size: 9pt; color: #334155; padding-left: 6px; }
+
+/* ─────────────────────────────────────────────────────
+   BIOMARKER CARDS
+───────────────────────────────────────────────────── */
+.bio-outer-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+.bio-card {
+  border: 1px solid #e2e8f0;
+  padding: 0;
+  vertical-align: top;
+  width: 49%;
+  background-color: #ffffff;
+}
+.bio-card-spacer { width: 2%; vertical-align: top; }
+.bio-card-header {
+  padding: 9px 12px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8faff;
+}
+.bio-card-header-table { width: 100%; }
+.bio-card-header-table td { vertical-align: middle; }
+.bio-card-name { font-size: 10pt; font-weight: bold; color: #0f172a; }
+.bio-status { font-size: 7pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.4px; padding: 2px 8px; }
+.bio-status-normal     { background-color: #dcfce7; color: #15803d; }
+.bio-status-borderline { background-color: #fef3c7; color: #92400e; }
+.bio-status-abnormal   { background-color: #fee2e2; color: #991b1b; }
+.bio-status-no_data    { background-color: #f1f5f9; color: #64748b; }
+
+.bio-card-body { padding: 10px 12px; }
+
+.bio-stats-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+.bio-stats-table td {
+  text-align: center;
+  padding: 6px 4px;
+  border: 1px solid #f1f5f9;
+  width: 25%;
+}
+.bio-stats-label { font-size: 7pt; color: #94a3b8; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 2px; }
+.bio-stats-val { font-size: 12pt; font-weight: bold; color: #0f172a; }
+
+.bio-normal-label { font-size: 8pt; color: #64748b; margin-bottom: 3px; }
+.bio-bar-bg { background-color: #e2e8f0; height: 4px; width: 100%; margin-bottom: 6px; }
+.bio-bar-fill { background-color: #15803d; height: 4px; }
+
+.bio-chart { margin-top: 4px; }
+.bio-chart img { width: 100%; display: block; }
+
+.bio-trend-row {
+  border-top: 1px solid #f1f5f9;
+  margin-top: 8px;
+  padding-top: 7px;
+  font-size: 8.5pt;
+  color: #475569;
+}
+.trend-improving { color: #15803d; font-weight: bold; }
+.trend-declining { color: #dc2626; font-weight: bold; }
+.trend-stable    { color: #1d4ed8; font-weight: bold; }
+
+/* ─────────────────────────────────────────────────────
+   GOAL TRACKING
+───────────────────────────────────────────────────── */
+.goal-completed-list { padding: 10px 14px; background-color: #f0fdf4; border-left: 3px solid #16a34a; margin-bottom: 10px; }
+.goal-missed-list    { padding: 10px 14px; background-color: #fff5f5; border-left: 3px solid #dc2626; margin-bottom: 10px; }
+.goal-list-title { font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+.goal-list-title-green { color: #15803d; }
+.goal-list-title-red   { color: #b91c1c; }
+.goal-item { font-size: 9pt; color: #1e293b; margin-bottom: 3px; }
+.goal-meta { font-size: 8pt; color: #94a3b8; }
+
+/* ─────────────────────────────────────────────────────
+   RECOMMENDATIONS
+───────────────────────────────────────────────────── */
+.rec-card { border: 1px solid #e2e8f0; margin-bottom: 10px; background-color: #ffffff; page-break-inside: avoid; }
+.rec-card-header { padding: 8px 14px; border-bottom: 1px solid #e2e8f0; background-color: #f8faff; }
+.rec-card-body { padding: 10px 14px; }
+
+.rec-priority-label { font-size: 7pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.6px; }
+.rec-priority-urgent { color: #991b1b; }
+.rec-priority-high   { color: #92400e; }
+.rec-priority-medium { color: #1d4ed8; }
+.rec-priority-low    { color: #475569; }
+.rec-category { font-size: 8pt; color: #94a3b8; margin-left: 6px; }
+.rec-consult { font-size: 7.5pt; background-color: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 2px; margin-left: 6px; }
+
+.rec-title { font-size: 11pt; font-weight: bold; color: #0f172a; margin-bottom: 5px; }
+.rec-desc  { font-size: 9pt; color: #334155; margin-bottom: 6px; line-height: 1.55; }
+.rec-steps { padding-left: 0; }
+.rec-step  { font-size: 8.5pt; color: #475569; margin-bottom: 3px; padding-left: 4px; }
+
+/* ─────────────────────────────────────────────────────
+   NOT LOGGED
+───────────────────────────────────────────────────── */
+.not-logged-box { background-color: #f8faff; border: 1px solid #e2e8f0; padding: 10px 14px; margin-bottom: 10px; }
+.not-logged-text { font-size: 8.5pt; color: #64748b; margin-bottom: 5px; }
+.not-logged-chips { }
+.chip { font-size: 8pt; color: #475569; background-color: #e2e8f0; padding: 2px 9px; margin-right: 5px; }
+
+/* ─────────────────────────────────────────────────────
+   FOOTER
+───────────────────────────────────────────────────── */
+.report-footer {
+  padding: 10px 44px;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 20px;
+}
+.footer-table { width: 100%; }
+.footer-left  { font-size: 8pt; color: #94a3b8; }
+.footer-right { font-size: 8pt; color: #94a3b8; text-align: right; }
+
+/* ─────────────────────────────────────────────────────
+   UTILITY
+───────────────────────────────────────────────────── */
+.nobreak { page-break-inside: avoid; }
+.mt4  { margin-top: 4px; }
+.mt8  { margin-top: 8px; }
+.mt12 { margin-top: 12px; }
+.mb4  { margin-bottom: 4px; }
+.mb8  { margin-bottom: 8px; }
+.full { width: 100%; }
+.right { text-align: right; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     COVER HEADER
+══════════════════════════════════════════════════ -->
+<div class="cover-page">
+  <table class="cover-top-row">
+    <tr>
+      <td><span class="cover-brand">&#9679;&nbsp; Pulse Health</span></td>
+      <td class="cover-report-type">{{ report_type_label }}</td>
+    </tr>
+  </table>
+
+  <div class="cover-title">{{ report_type_label }}</div>
+  <div class="cover-subtitle">Patient Health Analysis &amp; Clinical Insights Report</div>
+
+  <hr class="cover-divider"/>
+
+  <table class="cover-meta-table">
+    <tr>
+      <td>
+        <span class="cover-meta-key">Patient Name</span>
+        <span class="cover-meta-val">{{ patient_name }}</span>
+      </td>
+      <td>
+        <span class="cover-meta-key">Report Period</span>
+        <span class="cover-meta-val">{{ date_from }} &#8211; {{ date_to }}</span>
+      </td>
+      <td>
+        <span class="cover-meta-key">Date Generated</span>
+        <span class="cover-meta-val">{{ generated_date }}</span>
+      </td>
+      <td>
+        <span class="cover-meta-key">Data Points</span>
+        <span class="cover-meta-val">{{ total_readings }}</span>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     CONTENT BODY
+══════════════════════════════════════════════════ -->
+<div class="content">
+
+  <!-- ── Health Score ─────────────────────────────── -->
+  <div class="section-title">Health Score Overview</div>
+
+  {% if avg_health_score is not none %}
+  <table class="metric-table nobreak">
+    <tr>
+      <td class="metric-cell {% if avg_health_score >= 70 %}metric-cell-green{% elif avg_health_score >= 40 %}metric-cell-amber{% else %}metric-cell-red{% endif %}">
+        <div class="metric-label">Avg Health Score</div>
+        <div class="metric-value">{{ avg_health_score | round(0) | int }}<span class="metric-unit"> /100</span></div>
+        <div>
+          <span class="metric-badge {% if score_trend == 'improving' %}badge-green{% elif score_trend == 'declining' %}badge-red{% elif score_trend == 'stable' %}badge-blue{% else %}badge-gray{% endif %}">
+            {% if score_trend == 'improving' %}&#8593; Improving
+            {% elif score_trend == 'declining' %}&#8595; Declining
+            {% elif score_trend == 'stable' %}&#8594; Stable
+            {% else %}Tracking{% endif %}
+          </span>
+        </div>
+      </td>
+      {% if best_score is not none %}
+      <td class="metric-cell metric-cell-green">
+        <div class="metric-label">Best Score</div>
+        <div class="metric-value">{{ best_score | round(0) | int }}<span class="metric-unit"> /100</span></div>
+        <div><span class="metric-badge badge-green">Peak</span></div>
+      </td>
+      {% endif %}
+      {% if worst_score is not none %}
+      <td class="metric-cell {% if worst_score >= 70 %}metric-cell-green{% elif worst_score >= 40 %}metric-cell-amber{% else %}metric-cell-red{% endif %}">
+        <div class="metric-label">Lowest Score</div>
+        <div class="metric-value">{{ worst_score | round(0) | int }}<span class="metric-unit"> /100</span></div>
+        <div><span class="metric-badge badge-gray">Low</span></div>
+      </td>
+      {% endif %}
+      <td class="metric-cell metric-cell-blue">
+        <div class="metric-label">Total Readings</div>
+        <div class="metric-value">{{ total_readings }}</div>
+        <div><span class="metric-badge badge-blue">Data Points</span></div>
+      </td>
+    </tr>
+  </table>
+  {% else %}
+  <table class="metric-table nobreak">
+    <tr>
+      <td class="metric-cell metric-cell-blue" style="width:100%;">
+        <div class="metric-label">Total Readings</div>
+        <div class="metric-value">{{ total_readings }}<span class="metric-unit"> data points</span></div>
+        <div><span class="metric-badge badge-gray">No health score data yet</span></div>
+      </td>
+      <td style="width:75%;"></td>
+    </tr>
+  </table>
+  {% endif %}
+
+  {% if score_chart %}
+  <div class="score-chart-box nobreak mt8">
+    <div style="font-size:7.5pt; font-weight:bold; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; margin-bottom:6px;">Daily Health Score Trend</div>
+    <img src="data:image/png;base64,{{ score_chart }}" alt="Health Score Chart" />
+  </div>
+  {% endif %}
+
+
+  <!-- ── Clinical Insights ───────────────────────── -->
+  {% set has_abnormal    = active_stats | selectattr('status', 'equalto', 'abnormal')   | list | length > 0 %}
+  {% set has_borderline  = active_stats | selectattr('status', 'equalto', 'borderline') | list | length > 0 %}
+  {% set has_declining   = active_stats | selectattr('trend',  'equalto', 'declining')  | list | length > 0 %}
+  {% set has_improving   = active_stats | selectattr('trend',  'equalto', 'improving')  | list | length > 0 %}
+  {% if has_abnormal or has_borderline or has_declining or has_improving or score_trend in ['improving','declining'] %}
+  <div class="section-title">Clinical Insights</div>
+  <div class="insight-panel nobreak">
+    <div class="insight-panel-title">Automated Analysis Highlights</div>
+    {% for s in active_stats %}
+      {% if s.status == 'abnormal' %}
+      <div class="insight-row">
+        <table class="full"><tr>
+          <td style="width:14px; vertical-align:top; padding-top:1px;"><span class="insight-bullet-red">&#9632;</span></td>
+          <td class="insight-text"><strong>{{ s.label }}</strong> &#8212; Average {{ s.avg }} {{ s.unit }} is outside the normal range. Clinical review recommended.</td>
+        </tr></table>
+      </div>
+      {% elif s.status == 'borderline' %}
+      <div class="insight-row">
+        <table class="full"><tr>
+          <td style="width:14px; vertical-align:top; padding-top:1px;"><span class="insight-bullet-amber">&#9632;</span></td>
+          <td class="insight-text"><strong>{{ s.label }}</strong> &#8212; Borderline readings detected (avg {{ s.avg }} {{ s.unit }}). Monitor and consider lifestyle review.</td>
+        </tr></table>
+      </div>
+      {% endif %}
+      {% if s.trend == 'declining' %}
+      <div class="insight-row">
+        <table class="full"><tr>
+          <td style="width:14px; vertical-align:top; padding-top:1px;"><span class="insight-bullet-amber">&#9660;</span></td>
+          <td class="insight-text"><strong>{{ s.label }}</strong> values are trending downward over this period.</td>
+        </tr></table>
+      </div>
+      {% elif s.trend == 'improving' %}
+      <div class="insight-row">
+        <table class="full"><tr>
+          <td style="width:14px; vertical-align:top; padding-top:1px;"><span class="insight-bullet-green">&#9650;</span></td>
+          <td class="insight-text"><strong>{{ s.label }}</strong> shows a positive improving trend. Continue current regimen.</td>
+        </tr></table>
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% if score_trend == 'improving' %}
+    <div class="insight-row">
+      <table class="full"><tr>
+        <td style="width:14px; vertical-align:top; padding-top:1px;"><span class="insight-bullet-green">&#9650;</span></td>
+        <td class="insight-text">Overall health score <strong>improved</strong> during this period. Patient is trending positively.</td>
+      </tr></table>
+    </div>
+    {% elif score_trend == 'declining' %}
+    <div class="insight-row">
+      <table class="full"><tr>
+        <td style="width:14px; vertical-align:top; padding-top:1px;"><span class="insight-bullet-red">&#9660;</span></td>
+        <td class="insight-text">Overall health score <strong>declined</strong> during this period. Recommend follow-up review.</td>
+      </tr></table>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+
+  <!-- ── Biomarker Analysis ──────────────────────── -->
+  {% if active_stats %}
+  <div class="section-title">Biomarker Analysis</div>
+
+  {% set ns = namespace(col=0) %}
+  {% for s in active_stats %}
+    {% if ns.col == 0 %}<table class="bio-outer-table"><tr>{% endif %}
+    <td class="bio-card nobreak">
+      <!-- card header -->
+      <div class="bio-card-header">
+        <table class="bio-card-header-table">
+          <tr>
+            <td class="bio-card-name">{{ s.label }}</td>
+            <td class="right"><span class="bio-status bio-status-{{ s.status }}">{{ s.status | replace('_',' ') | upper }}</span></td>
+          </tr>
+        </table>
+      </div>
+      <!-- card body -->
+      <div class="bio-card-body">
+        {% if s.status != 'no_data' %}
+        <!-- stats row -->
+        <table class="bio-stats-table">
+          <tr>
+            {% if s.avg    is not none %}<td><span class="bio-stats-label">Average</span><span class="bio-stats-val">{{ s.avg }}</span></td>{% endif %}
+            {% if s.min    is not none %}<td><span class="bio-stats-label">Min</span><span class="bio-stats-val">{{ s.min }}</span></td>{% endif %}
+            {% if s.max    is not none %}<td><span class="bio-stats-label">Max</span><span class="bio-stats-val">{{ s.max }}</span></td>{% endif %}
+            {% if s.latest is not none %}<td><span class="bio-stats-label">Latest</span><span class="bio-stats-val">{{ s.latest }}</span></td>{% endif %}
+          </tr>
+        </table>
+        <!-- normal range bar -->
+        {% if s.days_total > 0 %}
+        {% set pct = ((s.days_in_normal / s.days_total) * 100) | round(0) | int %}
+        <div class="bio-normal-label">Within normal range: <strong>{{ pct }}%</strong> of {{ s.days_total }} days &nbsp;|&nbsp; {{ s.readings_count }} readings</div>
+        <div class="bio-bar-bg"><div class="bio-bar-fill" style="width:{{ pct }}%;"></div></div>
+        {% endif %}
+        <!-- chart -->
+        {% if s.chart %}
+        <div class="bio-chart"><img src="data:image/png;base64,{{ s.chart }}" alt="{{ s.label }}" /></div>
+        {% endif %}
+        <!-- trend -->
+        <div class="bio-trend-row">
+          Trend:&nbsp;
+          {% if s.trend == 'improving' %}<span class="trend-improving">&#9650; Improving</span>
+          {% elif s.trend == 'declining' %}<span class="trend-declining">&#9660; Declining</span>
+          {% elif s.trend == 'stable' %}<span class="trend-stable">&#8594; Stable</span>
+          {% else %}<span style="color:#64748b;">&#8212; Insufficient data</span>{% endif %}
+          &nbsp;&nbsp;Unit: {{ s.unit }}
+        </div>
+        {% else %}
+        <div style="font-size:8.5pt; color:#94a3b8; padding: 8px 0;">No readings logged for this biomarker during the selected period.</div>
+        {% endif %}
+      </div>
+    </td>
+    {% if ns.col == 0 %}<td class="bio-card-spacer"></td>{% endif %}
+    {% set ns.col = ns.col + 1 %}
+    {% if ns.col == 2 %}</tr></table>{% set ns.col = 0 %}{% endif %}
+  {% endfor %}
+  {% if ns.col == 1 %}<td class="bio-card-spacer"></td><td style="width:49%; vertical-align:top;"></td></tr></table>{% endif %}
+  {% endif %}
+
+
+  <!-- ── Goal Tracking ───────────────────────────── -->
+  {% if goals_total > 0 %}
+  <div class="section-title">Goal Tracking</div>
+  <table class="metric-table nobreak mb8">
+    <tr>
+      <td class="metric-cell metric-cell-blue">
+        <div class="metric-label">Total Tracked</div>
+        <div class="metric-value">{{ goals_total }}</div>
+      </td>
+      <td class="metric-cell metric-cell-green">
+        <div class="metric-label">Completed</div>
+        <div class="metric-value">{{ completed_goals | length }}</div>
+      </td>
+      <td class="metric-cell metric-cell-red">
+        <div class="metric-label">Missed</div>
+        <div class="metric-value">{{ missed_goals | length }}</div>
+      </td>
+      {% if goal_rate is not none %}
+      <td class="metric-cell {% if goal_rate >= 75 %}metric-cell-green{% elif goal_rate >= 40 %}metric-cell-amber{% else %}metric-cell-red{% endif %}">
+        <div class="metric-label">Completion Rate</div>
+        <div class="metric-value">{{ goal_rate | round(0) | int }}<span class="metric-unit">%</span></div>
+      </td>
+      {% endif %}
+    </tr>
+  </table>
+
+  {% if completed_goals %}
+  <div class="goal-completed-list nobreak mt8">
+    <div class="goal-list-title goal-list-title-green">&#10003;&nbsp; Completed Goals</div>
+    {% for g in completed_goals[:10] %}
+    <div class="goal-item">&#8226; {{ g.goal_text }} <span class="goal-meta">({{ g.goal_frequency | title }} &middot; {{ g.completion_date }})</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if missed_goals %}
+  <div class="goal-missed-list nobreak">
+    <div class="goal-list-title goal-list-title-red">&#10007;&nbsp; Missed Goals</div>
+    {% for g in missed_goals[:10] %}
+    <div class="goal-item">&#8226; {{ g.goal_text }} <span class="goal-meta">({{ g.goal_frequency | title }} &middot; {{ g.completion_date }})</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+
+
+  <!-- ── AI Recommendations ──────────────────────── -->
+  {% if recommendations %}
+  <div class="section-title">AI Health Recommendations</div>
+  {% for rec in recommendations %}
+  <div class="rec-card nobreak">
+    <div class="rec-card-header">
+      <span class="rec-priority-label rec-priority-{{ rec.priority | default('low') }}">
+        {{ rec.priority | default('low') | upper }} PRIORITY
+      </span>
+      <span class="rec-category">{{ rec.category | default('') | replace('_',' ') | title }}</span>
+      {% if rec.requires_professional_consultation %}
+      <span class="rec-consult">&#9673; Consult Healthcare Provider</span>
+      {% endif %}
+    </div>
+    <div class="rec-card-body">
+      <div class="rec-title">{{ rec.title }}</div>
+      <div class="rec-desc">{{ rec.description }}</div>
+      {% if rec.action_steps %}
+      <div class="rec-steps">
+        {% for step in rec.action_steps[:3] %}
+        <div class="rec-step">{{ loop.index }}. {{ step.instruction }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+
+  <!-- ── Biomarkers Not Logged ───────────────────── -->
+  {% if inactive_stats %}
+  <div class="section-title">Biomarkers Not Logged</div>
+  <div class="not-logged-box">
+    <div class="not-logged-text">The following biomarkers had no recorded data during this period. Consistent tracking across all metrics improves the accuracy and completeness of health reports.</div>
+    <table style="border-collapse:collapse;"><tr>
+      {% for s in inactive_stats %}
+      <td style="padding:3px 10px; background-color:#e2e8f0; color:#475569; font-size:8pt; font-weight:bold;">{{ s.label }}</td>
+      <td style="width:6px;"></td>
+      {% endfor %}
+    </tr></table>
+  </div>
+  {% endif %}
+
+</div><!-- /content -->
+
+<!-- ══════════════════════════════════════════════════
+     FOOTER
+══════════════════════════════════════════════════ -->
+<div class="report-footer">
+  <table class="footer-table">
+    <tr>
+      <td class="footer-left">Generated by <strong>Pulse Health</strong> &bull; getpulse.app &bull; Report ID: {{ patient_name | replace(' ','_') }}_{{ generated_date | replace(' ','') }}</td>
+      <td class="footer-right">{{ generated_date }} &bull; This report is for informational purposes only and does not constitute medical advice. Always consult a qualified healthcare professional.</td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>
