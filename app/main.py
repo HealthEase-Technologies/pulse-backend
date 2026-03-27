@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
-from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations, thresholds, alerts, chat, pets, reports
+from app.routers import auth, users, admins, providers, patients, connections, devices, biomarkers, health_summaries, notes, recommendations, thresholds, alerts, chat, pets, reports, contact
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.patient_service import PatientService
@@ -62,6 +62,8 @@ app.include_router(chat.router, prefix=settings.api_v1_str)
 app.include_router(pets.router, prefix=settings.api_v1_str)
 # Sprint 10 - Health Reports
 app.include_router(reports.router, prefix=settings.api_v1_str)
+# Public - Contact form
+app.include_router(contact.router, prefix=settings.api_v1_str)
 
 @app.get("/")
 async def root():
