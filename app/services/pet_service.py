@@ -392,6 +392,46 @@ class PetService:
         except Exception:
             return False
 
+    # ── State timeline ────────────────────────────────────────────────────────
+
+    @staticmethod
+    async def get_state_timeline(user_id: str, days: int = 30) -> Dict:
+        """Return pet state events + daily score series for the last N days."""
+        try:
+            from datetime import timedelta
+            date_from = (date.today() - timedelta(days=days)).isoformat()
+
+            events_resp = (
+                supabase_admin.table("patient_pet_state_events")
+                .select("*")
+                .eq("patient_user_id", user_id)
+                .gte("created_at", f"{date_from}T00:00:00")
+                .order("created_at", desc=False)
+                .execute()
+            )
+
+            scores_resp = (
+                supabase_admin.table("daily_health_scores")
+                .select("date, score")
+                .eq("user_id", user_id)
+                .gte("date", date_from)
+                .order("date")
+                .execute()
+            )
+
+            score_series = [
+                {"date": r["date"], "score": round(float(r["score"]), 1)}
+                for r in (scores_resp.data or [])
+            ]
+
+            return {
+                "events":       events_resp.data or [],
+                "score_series": score_series,
+            }
+        except Exception as e:
+            logger.warning(f"Could not fetch pet timeline: {e}")
+            return {"events": [], "score_series": []}
+
     # ── Cron: daily reset ─────────────────────────────────────────────────────
 
     @staticmethod
