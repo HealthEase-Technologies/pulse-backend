@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from typing import List, Dict
 from app.schemas.pet import (
     PetSelectRequest, PetCustomizeRequest, HealthScoreResponse
@@ -60,6 +60,15 @@ async def customize_pet(
         if key in update and hasattr(update[key], "value"):
             update[key] = update[key].value
     return await PetService.customize_pet(current_user["db_user"]["id"], update)
+
+
+@router.get("/timeline")
+async def get_pet_timeline(
+    days: int = Query(30, ge=7, le=90),
+    current_user: dict = Depends(get_current_user),
+):
+    """Pet mood timeline: state events + daily score series for last N days."""
+    return await PetService.get_state_timeline(current_user["db_user"]["id"], days=days)
 
 
 @router.post("/check-unlock", response_model=Dict)
