@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, EmailStr
-from app.config.database import supabase
+from app.config.database import supabase_admin
 
 router = APIRouter(prefix="/contact", tags=["contact"])
 
@@ -15,7 +15,7 @@ class ContactSubmission(BaseModel):
 @router.post("/submit", status_code=status.HTTP_201_CREATED)
 async def submit_contact_form(data: ContactSubmission):
     try:
-        result = supabase.table("contact_submissions").insert(data.model_dump()).execute()
+        result = supabase_admin.table("contact_submissions").insert(data.model_dump()).execute()
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to save submission")
         return {"success": True, "id": result.data[0]["id"]}
