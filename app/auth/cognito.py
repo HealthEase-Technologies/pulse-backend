@@ -1,9 +1,13 @@
 import boto3
 import jwt
 import requests
+import logging
+from datetime import timedelta
 from typing import Dict, Optional
 from app.config.settings import settings
 from fastapi import HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 class CognitoAuth:
     def __init__(self):
@@ -27,38 +31,63 @@ class CognitoAuth:
             # Decode header to get kid
             header = jwt.get_unverified_header(token)
             kid = header['kid']
-            
-            # Get the public key
+
+            # Refresh JWKS if the kid is not found (keys may have rotated)
             jwks = self.get_jwks()
             key = None
             for k in jwks['keys']:
                 if k['kid'] == kid:
                     key = jwt.algorithms.RSAAlgorithm.from_jwk(k)
                     break
-            
+
             if not key:
+                # Force refresh JWKS cache and retry once
+                self._jwks = None
+                jwks = self.get_jwks()
+                for k in jwks['keys']:
+                    if k['kid'] == kid:
+                        key = jwt.algorithms.RSAAlgorithm.from_jwk(k)
+                        break
+
+            if not key:
+                logger.error(f"No matching key for kid={kid}. Available kids: {[k['kid'] for k in jwks['keys']]}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Unable to find appropriate key"
                 )
-            
-            # Verify and decode token
+
+            # Verify and decode token (30s leeway for clock skew)
             decoded_token = jwt.decode(
                 token,
                 key,
                 algorithms=['RS256'],
                 audience=self.client_id,
-                issuer=f"https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}"
+                issuer=f"https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}",
+                leeway=timedelta(seconds=30),
             )
-            
+
             return decoded_token
-            
+
         except jwt.ExpiredSignatureError:
+            logger.warning("Token rejected: expired")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has expired"
             )
+        except jwt.InvalidAudienceError as e:
+            logger.error(f"Token rejected: audience mismatch — expected={self.client_id}, error={e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid token audience: {str(e)}"
+            )
+        except jwt.InvalidIssuerError as e:
+            logger.error(f"Token rejected: issuer mismatch — {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid token issuer: {str(e)}"
+            )
         except jwt.InvalidTokenError as e:
+            logger.error(f"Token rejected: {type(e).__name__} — {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Invalid token: {str(e)}"
