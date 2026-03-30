@@ -343,16 +343,16 @@ class PetService:
         try:
             resp = (
                 supabase_admin.table("goal_completions")
-                .select("date")
+                .select("completion_date")
                 .eq("user_id", user_id)
                 .eq("status", "completed")
-                .order("date", desc=True)
+                .order("completion_date", desc=True)
                 .limit(60)
                 .execute()
             )
             if not resp.data:
                 return 0
-            dates = sorted({r["date"][:10] for r in resp.data}, reverse=True)
+            dates = sorted({r["completion_date"][:10] for r in resp.data}, reverse=True)
             today = date.today()
             streak = 0
             for i, d in enumerate(dates):
