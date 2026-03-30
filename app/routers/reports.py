@@ -7,6 +7,7 @@ import io
 from app.schemas.report import (
     ReportGenerateRequest, ReportResponse, ReportListResponse
 )
+from app.schemas.user import UserRole
 from app.services.report_service import ReportService
 from app.utils.s3 import S3Service
 from app.auth.dependencies import get_current_user
@@ -20,8 +21,8 @@ def _patient_id_for_request(body_patient_id: Optional[str], current_user: dict) 
     Otherwise use the current user's own ID.
     """
     db_user = current_user["db_user"]
-    role    = db_user.get("role", "patient")
-    if role == "provider" and body_patient_id:
+    role    = db_user.get("role")
+    if role == UserRole.PROVIDER and body_patient_id:
         return body_patient_id
     return db_user["id"]
 
