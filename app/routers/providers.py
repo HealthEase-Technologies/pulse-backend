@@ -253,13 +253,13 @@ async def get_provider_directory(
 
         # Get patient's connections to check status
         connections = supabase_admin.table("patient_provider_connections").select(
-            "provider_id, status"
+            "id, provider_id, status"
         ).eq("patient_id", patient_id).execute()
 
         connection_map = {}
         if connections.data:
             for conn in connections.data:
-                connection_map[conn["provider_id"]] = conn["status"]
+                connection_map[conn["provider_id"]] = {"status": conn["status"], "id": conn["id"]}
 
         # Enrich providers with email and connection status
         enriched_providers = []
@@ -273,6 +273,7 @@ async def get_provider_directory(
             if search and search.lower() not in provider["full_name"].lower():
                 continue
 
+            conn_data = connection_map.get(provider["id"])
             provider_data = {
                 "provider_id": provider["user_id"],
                 "provider_name": provider["full_name"],
@@ -280,7 +281,8 @@ async def get_provider_directory(
                 "specialisation": provider.get("specialisation"),
                 "years_of_experience": provider.get("years_of_experience"),
                 "about": provider.get("about"),
-                "connection_status": connection_map.get(provider["id"], "none")
+                "connection_status": conn_data["status"] if conn_data else "none",
+                "connection_id": conn_data["id"] if conn_data else None,
             }
 
             enriched_providers.append(provider_data)
