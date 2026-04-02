@@ -112,7 +112,7 @@ class ReportService:
             return pd.DataFrame(columns=["biomarker_type", "value", "unit", "recorded_at"])
 
         df = pd.DataFrame(res.data)
-        df["recorded_at"] = pd.to_datetime(df["recorded_at"], utc=True)
+        df["recorded_at"] = pd.to_datetime(df["recorded_at"], format="ISO8601", utc=True)
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
         return df
 
